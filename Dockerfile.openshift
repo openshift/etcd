@@ -1,10 +1,12 @@
-FROM registry.svc.ci.openshift.org/openshift/release:golang-1.12 AS builder
+FROM registry.svc.ci.openshift.org/openshift/release:golang-1.10 AS builder
 
-WORKDIR /go/src/go.etcd.io/etcd
+ENV GOPATH /go
 
-COPY . .
+COPY . $GOPATH/src/go.etcd.io/etcd
 
-RUN ./build
+RUN yum install -y git && \
+    cd $GOPATH/src/go.etcd.io/etcd && \
+    make build
 
 # stage 2
 FROM registry.svc.ci.openshift.org/openshift/origin-v4.0:base
@@ -12,9 +14,7 @@ FROM registry.svc.ci.openshift.org/openshift/origin-v4.0:base
 ENTRYPOINT ["/usr/bin/etcd"]
 
 COPY --from=builder /go/src/go.etcd.io/etcd/bin/etcd /usr/bin/
-COPY --from=builder /go/src/go.etcd.io/etcd/bin/etcdctl /usr/bin/
-COPY --from=builder /go/src/go.etcd.io/etcd/bin/discover-etcd-initial-cluster /usr/bin/
 
 LABEL io.k8s.display-name="etcd server" \
-      io.k8s.description="etcd is a distributed key-value store which stores the persistent master state for Kubernetes and OpenShift." \
+      io.k8s.description="etcd is distributed key-value store which stores the persistent master state for Kubernetes and OpenShift." \
       maintainer="Sam Batschelet <sbatsche@redhat.com>"

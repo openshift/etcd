@@ -1,20 +1,18 @@
 FROM openshift/golang-builder:1.10 AS builder
 
-ENV GOPATH /go
+WORKDIR /go/src/github.com/coreos/etcd
 
-COPY . $GOPATH/src/go.etcd.io/etcd
+COPY . .
 
-RUN yum install -y make && \
-    cd $GOPATH/src/go.etcd.io/etcd && \
-    make build
+RUN make build
 
 # stage 2
 FROM openshift/origin-base
 
 ENTRYPOINT ["/usr/bin/etcd"]
 
-COPY --from=builder /go/src/go.etcd.io/etcd/bin/etcd /usr/bin/
-COPY --from=builder /go/src/go.etcd.io/etcd/bin/etcdctl /usr/bin/
+COPY --from=builder /go/src/github.com/coreos/etcd/bin/etcd /usr/bin/
+COPY --from=builder /go/src/github.com/coreos/etcd/bin/etcdctl /usr/bin/
 
 LABEL io.k8s.display-name="etcd server" \
       io.k8s.description="etcd is a distributed key-value store which stores the persistent master state for Kubernetes and OpenShift." \

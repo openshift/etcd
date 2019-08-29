@@ -4,7 +4,7 @@ WORKDIR /go/src/github.com/coreos/etcd
 
 COPY . .
 
-RUN make build
+RUN ./build
 
 # stage 2
 FROM openshift/origin-base

@@ -13,6 +13,7 @@ ENTRYPOINT ["/usr/bin/etcd"]
 
 COPY --from=builder /go/src/github.com/coreos/etcd/bin/etcd /usr/bin/
 COPY --from=builder /go/src/github.com/coreos/etcd/bin/etcdctl /usr/bin/
+COPY --from=builder /go/src/github.com/coreos/etcd/bin/discover-etcd-initial-cluster /usr/bin/
 
 LABEL io.k8s.display-name="etcd server" \
       io.k8s.description="etcd is a distributed key-value store which stores the persistent master state for Kubernetes and OpenShift." \

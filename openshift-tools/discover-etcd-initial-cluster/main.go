@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	discover_etcd_initial_cluster "github.com/coreos/etcd/openshift-tools/pkg/discover-etcd-initial-cluster"
 	"github.com/spf13/pflag"
-	discover_etcd_initial_cluster "go.etcd.io/etcd/openshift-tools/pkg/discover-etcd-initial-cluster"
 )
 
 // copy from `utilflag "k8s.io/component-base/cli/flag"`

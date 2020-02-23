@@ -121,14 +121,15 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		memberDir = filepath.Join(o.DataDir, "member")
 	}
 
+	memberDirExists := false
 	_, err := os.Stat(memberDir)
 	switch {
 	case os.IsNotExist(err):
 		// do nothing. This just means we fall through to the polling logic
 
 	case err == nil:
-		fmt.Printf(o.TargetName)
-		return nil
+		fmt.Fprintf(os.Stderr, "memberDir %s is present on %s\n", memberDir, o.TargetName)
+		memberDirExists = true
 
 	case err != nil:
 		return err
@@ -159,11 +160,26 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		fmt.Fprintf(os.Stderr, "#### sleeping...\n")
 		time.Sleep(1 * time.Second)
 	}
-	if err != nil {
+
+	switch {
+	case err != nil:
 		return err
-	}
-	if targetMember == nil {
+
+	case targetMember == nil && memberDirExists:
+		// we weren't able to locate other members and need to return based previous memberDir so we can restart.  This is the off and on again flow.
+		fmt.Printf(o.TargetName)
+		return nil
+
+	case targetMember == nil && !memberDirExists:
+		// our member has not been added to the cluster and we have no previous data to start based on.
 		return fmt.Errorf("timed out")
+
+	case targetMember != nil && len(targetMember.Name) == 0 && memberDirExists:
+		// our member has been added to the cluster and has never been started before, but a data directory exists. This means that we have dirty data we must remove
+		archiveDataDir(memberDir)
+
+	default:
+		// a target member was found, but no exception circumstances.
 	}
 
 	etcdInitialClusterEntries := []string{}
@@ -177,22 +193,22 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		archiveDataDir(filepath.Clean(o.DataDir))
 		etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", o.TargetName, targetMember.PeerURLs[0]))
 	}
+
 	fmt.Printf(strings.Join(etcdInitialClusterEntries, ","))
 
 	return nil
 }
 
-func archiveDataDir(dataDir string) error {
-	dir := filepath.Join(dataDir+"-archive", time.Now().Format(time.RFC3339))
+// TO DO: instead of archiving, we should remove the directory to avoid any confusion with the backups.
+func archiveDataDir(sourceDir string) error {
+	targetDir := filepath.Join(sourceDir+"-removed-archive", time.Now().Format(time.RFC3339))
 
 	// If dir already exists, add seconds to the dir name
-	if _, err := os.Stat(dir); err == nil {
-		dir = filepath.Join(dataDir+"-archive", time.Now().Add(time.Second).Format(time.RFC3339))
+	if _, err := os.Stat(targetDir); err == nil {
+		targetDir = filepath.Join(sourceDir+"-removed-archive", time.Now().Add(time.Second).Format(time.RFC3339))
 	}
-	if err := os.Rename(dataDir, dir); err != nil {
-		if !os.IsNotExist(err) {
-			return err
-		}
+	if err := os.Rename(sourceDir, targetDir); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	return nil
 }

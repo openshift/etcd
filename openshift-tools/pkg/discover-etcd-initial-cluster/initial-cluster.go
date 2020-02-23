@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,8 +35,8 @@ type DiscoverEtcdInitialClusterOptions struct {
 	// Endpoints is a list of all the endpoints to use to try to contact etcd
 	Endpoints []string
 
-	// MemberDir is the directory created when etcd starts the first time
-	MemberDir string
+	// DataDir is the directory created when etcd starts the first time
+	DataDir string
 }
 
 func NewDiscoverEtcdInitialCluster() *DiscoverEtcdInitialClusterOptions {
@@ -79,7 +80,7 @@ func (o *DiscoverEtcdInitialClusterOptions) BindFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&o.ClientCertFile, "cert", o.ClientCertFile, "client cert to use to authenticate this binary to etcd")
 	flags.StringVar(&o.ClientKeyFile, "key", o.ClientKeyFile, "client key to use to authenticate this binary to etcd")
 	flags.StringSliceVar(&o.Endpoints, "endpoints", o.Endpoints, "list of all the endpoints to use to try to contact etcd")
-	flags.StringVar(&o.MemberDir, "data-dir", o.MemberDir, "file to stat for existence of /var/lib/etcd/member")
+	flags.StringVar(&o.DataDir, "data-dir", o.DataDir, "dir to stat for existence of the member directory")
 	flags.StringVar(&o.TargetPeerURLHost, "target-peer-url-host", o.TargetPeerURLHost, "host portion of the peer URL.  It is used to match on. (either IP or hostname)")
 	flags.StringVar(&o.TargetName, "target-name", o.TargetName, "name to assign to this peer if we create it")
 }
@@ -97,7 +98,7 @@ func (o *DiscoverEtcdInitialClusterOptions) Validate() error {
 	if len(o.Endpoints) == 0 {
 		return fmt.Errorf("missing --endpoints")
 	}
-	if len(o.MemberDir) == 0 {
+	if len(o.DataDir) == 0 {
 		return fmt.Errorf("missing --data-dir")
 	}
 	if len(o.TargetPeerURLHost) == 0 {
@@ -110,7 +111,17 @@ func (o *DiscoverEtcdInitialClusterOptions) Validate() error {
 }
 
 func (o *DiscoverEtcdInitialClusterOptions) Run() error {
-	_, err := os.Stat(o.MemberDir)
+
+	//Temporary hack to work with the current pod.yaml
+	var memberDir string
+	if strings.HasSuffix(o.DataDir, "member") {
+		memberDir = o.DataDir
+		o.DataDir = filepath.Dir(o.DataDir)
+	} else {
+		memberDir = filepath.Join(o.DataDir, "member")
+	}
+
+	_, err := os.Stat(memberDir)
 	switch {
 	case os.IsNotExist(err):
 		// do nothing. This just means we fall through to the polling logic
@@ -163,10 +174,26 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", member.Name, member.PeerURLs[0]))
 	}
 	if len(targetMember.Name) == 0 {
+		archiveDataDir(filepath.Clean(o.DataDir))
 		etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", o.TargetName, targetMember.PeerURLs[0]))
 	}
 	fmt.Printf(strings.Join(etcdInitialClusterEntries, ","))
 
+	return nil
+}
+
+func archiveDataDir(dataDir string) error {
+	dir := filepath.Join(dataDir+"-archive", time.Now().Format(time.RFC3339))
+
+	// If dir already exists, add seconds to the dir name
+	if _, err := os.Stat(dir); err == nil {
+		dir = filepath.Join(dataDir+"-archive", time.Now().Add(time.Second).Format(time.RFC3339))
+	}
+	if err := os.Rename(dataDir, dir); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -116,7 +116,6 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 	var memberDir string
 	if strings.HasSuffix(o.DataDir, "member") {
 		memberDir = o.DataDir
-		o.DataDir = filepath.Dir(o.DataDir)
 	} else {
 		memberDir = filepath.Join(o.DataDir, "member")
 	}
@@ -127,7 +126,7 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		// do nothing. This just means we fall through to the polling logic
 
 	case err == nil:
-		fmt.Printf(o.TargetName)
+		fmt.Fprintf(os.Stderr, "data-dir exists for %v\n",o.TargetName)
 		return nil
 
 	case err != nil:
@@ -174,26 +173,10 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", member.Name, member.PeerURLs[0]))
 	}
 	if len(targetMember.Name) == 0 {
-		archiveDataDir(filepath.Clean(o.DataDir))
 		etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", o.TargetName, targetMember.PeerURLs[0]))
 	}
 	fmt.Printf(strings.Join(etcdInitialClusterEntries, ","))
 
-	return nil
-}
-
-func archiveDataDir(dataDir string) error {
-	dir := filepath.Join(dataDir+"-archive", time.Now().Format(time.RFC3339))
-
-	// If dir already exists, add seconds to the dir name
-	if _, err := os.Stat(dir); err == nil {
-		dir = filepath.Join(dataDir+"-archive", time.Now().Add(time.Second).Format(time.RFC3339))
-	}
-	if err := os.Rename(dataDir, dir); err != nil {
-		if !os.IsNotExist(err) {
-			return err
-		}
-	}
 	return nil
 }
 

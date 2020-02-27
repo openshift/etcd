@@ -201,13 +201,10 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 
 // TO DO: instead of archiving, we should remove the directory to avoid any confusion with the backups.
 func archiveDataDir(sourceDir string) error {
-	targetDir := filepath.Join(sourceDir+"-removed-archive", time.Now().Format(time.RFC3339))
+	targetDir := filepath.Join(sourceDir + "-removed-archive-" + time.Now().Format("2006-01-02-030405"))
 
-	// If dir already exists, add seconds to the dir name
-	if _, err := os.Stat(targetDir); err == nil {
-		targetDir = filepath.Join(sourceDir+"-removed-archive", time.Now().Add(time.Second).Format(time.RFC3339))
-	}
-	if err := os.Rename(sourceDir, targetDir); err != nil && !os.IsNotExist(err) {
+	fmt.Fprintf(os.Stderr, "attempting to archive %s to %s", sourceDir, targetDir)
+	if err := os.Rename(sourceDir, targetDir); err != nil {
 		return err
 	}
 	return nil

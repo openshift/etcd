@@ -136,7 +136,12 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 	}
 
 	client, err := o.getClient()
-	if err != nil {
+	if err != nil && memberDirExists {
+		// we weren't able to get client and need to return based previous memberDir so we can restart.  This is the off and on again flow.
+		fmt.Fprintf(os.Stderr, "Couldn't get client, but memberDir %s is present on %s, err=%s. Returning with no error.\n", memberDir, o.TargetName, err)
+		fmt.Printf(o.TargetName)
+		return nil
+	} else if err != nil {
 		return err
 	}
 	defer client.Close()
@@ -162,13 +167,15 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 	}
 
 	switch {
-	case err != nil:
-		return err
-
 	case targetMember == nil && memberDirExists:
-		// we weren't able to locate other members and need to return based previous memberDir so we can restart.  This is the off and on again flow.
+		// we weren't able to locate other members and need to return based previous memberDir so we can restart.  This is again the off and on flow.
+		fmt.Fprintf(os.Stderr, "Couldn't get targetMember, but memberDir %s is present on %s. Returning with no error.\n", memberDir, o.TargetName)
 		fmt.Printf(o.TargetName)
 		return nil
+
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "Couldn't get targetMember. Returning error.\n")
+		return err
 
 	case targetMember == nil && !memberDirExists:
 		// our member has not been added to the cluster and we have no previous data to start based on.
@@ -176,6 +183,7 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 
 	case targetMember != nil && len(targetMember.Name) == 0 && memberDirExists:
 		// our member has been added to the cluster and has never been started before, but a data directory exists. This means that we have dirty data we must remove
+		fmt.Fprintf(os.Stderr, "Found targetMember but is unstarted and memberDir exists. Archiving memberrDir\n")
 		archiveDataDir(memberDir)
 
 	default:
@@ -190,6 +198,7 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", member.Name, member.PeerURLs[0]))
 	}
 	if len(targetMember.Name) == 0 {
+		fmt.Fprintf(os.Stderr, "Adding the unstarted member to the end %s\n", o.TargetName)
 		etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", o.TargetName, targetMember.PeerURLs[0]))
 	}
 

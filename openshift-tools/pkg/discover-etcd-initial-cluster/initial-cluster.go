@@ -195,7 +195,9 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		if len(member.Name) == 0 { // this is the signal for whether or not a given peer is started
 			continue
 		}
-		etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", member.Name, member.PeerURLs[0]))
+		for _, peerURL := range member.PeerURLs{
+			etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", member.Name, peerURL))
+		}
 	}
 	if len(targetMember.Name) == 0 {
 		fmt.Fprintf(os.Stderr, "Adding the unstarted member to the end %s\n", o.TargetName)

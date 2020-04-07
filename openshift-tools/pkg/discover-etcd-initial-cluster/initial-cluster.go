@@ -8,16 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coreos/etcd/etcdserver/etcdserverpb"
-
-	"github.com/coreos/etcd/pkg/transport"
-	"google.golang.org/grpc"
-
-	"github.com/coreos/etcd/clientv3"
-
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
+
+	"go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/etcdserver/etcdserverpb"
+	"go.etcd.io/etcd/pkg/transport"
 )
 
 type DiscoverEtcdInitialClusterOptions struct {
@@ -195,7 +193,7 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		if len(member.Name) == 0 { // this is the signal for whether or not a given peer is started
 			continue
 		}
-		for _, peerURL := range member.PeerURLs{
+		for _, peerURL := range member.PeerURLs {
 			etcdInitialClusterEntries = append(etcdInitialClusterEntries, fmt.Sprintf("%s=%s", member.Name, peerURL))
 		}
 	}

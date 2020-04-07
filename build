@@ -64,6 +64,7 @@ etcd_build() {
 		-o "${out}/etcdctl" ${REPO_PATH}/etcdctl || return
 }
 
+
 openshift_tools_build() {
 	out="bin"
 	if [[ -n "${BINDIR}" ]]; then out="${BINDIR}"; fi
@@ -74,7 +75,7 @@ openshift_tools_build() {
 	CGO_ENABLED=0 go build $GO_BUILD_FLAGS \
 		-installsuffix cgo \
 		-ldflags "$GO_LDFLAGS" \
-		-o "${out}/discover-etcd-initial-cluster" "github.com/coreos/etcd/openshift-tools/discover-etcd-initial-cluster" || return
+		-o "${out}/discover-etcd-initial-cluster" "go.etcd.io/etcd/openshift-tools/discover-etcd-initial-cluster" || return
 }
 
 tools_build() {

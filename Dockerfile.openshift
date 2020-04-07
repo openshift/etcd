@@ -1,6 +1,6 @@
 FROM registry.svc.ci.openshift.org/openshift/release:golang-1.12 AS builder
 
-WORKDIR /go/src/github.com/coreos/etcd
+WORKDIR /go/src/go.etcd.io/etcd
 
 COPY . .
 

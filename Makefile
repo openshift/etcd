@@ -22,7 +22,7 @@ XARGS += rm -r
 
 .PHONY: build
 build:
-	GO_BUILD_FLAGS="-v" ./build.sh
+	GO111MODULE=on GO_BUILD_FLAGS="-v -mod vendor" ./build
 	./bin/etcd --version
 	./bin/etcdctl version
 	./bin/etcdutl version

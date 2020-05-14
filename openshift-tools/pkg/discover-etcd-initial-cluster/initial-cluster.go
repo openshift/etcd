@@ -239,7 +239,7 @@ func (o *DiscoverEtcdInitialClusterOptions) checkForTarget(client *clientv3.Clie
 	for i := range memberResponse.Members {
 		member := memberResponse.Members[i]
 		for _, peerURL := range member.PeerURLs {
-			if strings.Contains(peerURL, o.TargetPeerURLHost) {
+			if peerURL == ("https://" + o.TargetPeerURLHost + ":2380") {
 				targetMember = member
 			}
 		}

@@ -7,8 +7,7 @@ if ! [[ "$0" =~ scripts/updatebom.sh ]]; then
 	exit 255
 fi
 
-echo "installing 'bill-of-materials.json'"
-go get -v -u github.com/coreos/license-bill-of-materials
+./scripts/install_tool.sh github.com/coreos/license-bill-of-materials
 
 echo "generating bill-of-materials.json"
 license-bill-of-materials \

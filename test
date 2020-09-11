@@ -33,6 +33,11 @@
 # $ COVERDIR=coverage PASSES="build_cov cov" ./test
 set -e
 
+# The test script is not supposed to make any changes to the files
+# e.g. add/update missing dependencies. Such divergences should be 
+# detected and trigger a failure that needs explicit developer's action.
+export GOFLAGS=-mod=readonly
+
 source ./build
 
 # build before setting up test GOPATH
@@ -646,6 +651,7 @@ function bom_pass {
 		return
 	fi
 	echo "Checking bill of materials..."
+	# https://github.com/golang/go/commit/7c388cc89c76bc7167287fb488afcaf5a4aa12bf
 	license-bill-of-materials \
 		--override-file bill-of-materials.override.json \
 		go.etcd.io/etcd go.etcd.io/etcd/etcdctl >bom-now.json || true
@@ -673,6 +679,7 @@ function build_cov_pass {
 	out="bin"
 	if [ -n "${BINDIR}" ]; then out="${BINDIR}"; fi
 	go test -tags cov -c -covermode=set -coverpkg="$PKGS_COMMA" -o "${out}/etcd_test"
+
 	go test -tags cov -c -covermode=set -coverpkg="$PKGS_COMMA" -o "${out}/etcdctl_test" "${REPO_PATH}/etcdctl"
 }
 

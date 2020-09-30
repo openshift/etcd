@@ -244,8 +244,11 @@ func (o *DiscoverEtcdInitialClusterOptions) checkForTarget(client *clientv3.Clie
 			}
 		}
 	}
+	if targetMember == nil {
+		return nil, nil, fmt.Errorf("peer %q not found in member list, check operator logs for possible scaling problems", "https://"+o.TargetPeerURLHost+":2380")
+	}
 
-	return targetMember, memberResponse.Members, err
+	return targetMember, memberResponse.Members, nil
 }
 
 func (o *DiscoverEtcdInitialClusterOptions) getClient() (*clientv3.Client, error) {

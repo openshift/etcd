@@ -1,4 +1,4 @@
-FROM openshift/golang-builder:1.12 AS builder
+FROM registry.svc.ci.openshift.org/ocp/builder:rhel-8-etcd-golang-1.12 AS builder
 
 WORKDIR /go/src/go.etcd.io/etcd
 
@@ -7,7 +7,7 @@ COPY . .
 RUN ./build
 
 # stage 2
-FROM openshift/origin-base
+FROM registry.svc.ci.openshift.org/ocp/4.6:base
 
 ENTRYPOINT ["/usr/bin/etcd"]
 

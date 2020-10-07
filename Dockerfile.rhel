@@ -7,7 +7,7 @@ COPY . .
 RUN ./build
 
 # stage 2
-FROM registry.svc.ci.openshift.org/ocp/4.6:base
+FROM registry.svc.ci.openshift.org/ocp/4.7:base
 
 ENTRYPOINT ["/usr/bin/etcd"]
 

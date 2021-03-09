@@ -113,7 +113,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		e = nil
 	}()
 
-	if cfg.logger != nil && !cfg.SocketOpts.Empty() {
+	if !cfg.SocketOpts.Empty() {
 		cfg.logger.Info(
 			"configuring socket options",
 			zap.Bool("reuse-address", cfg.SocketOpts.ReuseAddress),
@@ -218,7 +218,6 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		EnableLeaseCheckpoint:       cfg.ExperimentalEnableLeaseCheckpoint,
 		CompactionBatchLimit:        cfg.ExperimentalCompactionBatchLimit,
 		WatchProgressNotifyInterval: cfg.ExperimentalWatchProgressNotifyInterval,
-		WarningApplyDuration:        cfg.ExperimentalWarningApplyDuration,
 	}
 	print(e.cfg.logger, *cfg, srvcfg, memberInitialized)
 	if e.Server, err = etcdserver.NewServer(srvcfg); err != nil {
@@ -745,7 +744,7 @@ func (e *Etcd) serveClients() (err error) {
 		}
 	} else {
 		mux := http.NewServeMux()
-		etcdhttp.HandleBasic(e.cfg.logger, mux, e.Server)
+		etcdhttp.HandleBasic(mux, e.Server)
 		h = mux
 	}
 
@@ -780,7 +779,7 @@ func (e *Etcd) serveMetrics() (err error) {
 
 	if len(e.cfg.ListenMetricsUrls) > 0 {
 		metricsMux := http.NewServeMux()
-		etcdhttp.HandleMetricsHealth(e.cfg.logger, metricsMux, e.Server)
+		etcdhttp.HandleMetricsHealth(metricsMux, e.Server)
 
 		for _, murl := range e.cfg.ListenMetricsUrls {
 			tlsInfo := &e.cfg.ClientTLSInfo

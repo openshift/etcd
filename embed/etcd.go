@@ -113,7 +113,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		e = nil
 	}()
 
-	if !cfg.SocketOpts.Empty() {
+	if cfg.logger != nil && !cfg.SocketOpts.Empty() {
 		cfg.logger.Info(
 			"configuring socket options",
 			zap.Bool("reuse-address", cfg.SocketOpts.ReuseAddress),

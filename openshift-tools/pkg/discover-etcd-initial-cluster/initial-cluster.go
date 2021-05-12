@@ -198,15 +198,15 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		// this is the latter. Do not let etcd start and report the condition as an error.
 		// Result: return error and restart container
 		if found && !dataDirExists {
-			return fmt.Errorf("member %q dataDir has been destoyed and must be removed from the cluster", target.String())
+			return fmt.Errorf("member %q dataDir has been destroyed and must be removed from the cluster", target.String())
 		}
 
 		// Condition: member not found with dataDir
-		// The member has been removed from the cluster. etcd should not start and return error. The dataDir will be archived once the operator
+		// The member has been removed from the cluster. The dataDir will be archived once the operator
 		// scales up etcd.
-		// Result: return error and restart container
+		// Result: retry member check allowing operator time to scale up etcd again on this node.
 		if !found && dataDirExists {
-			return fmt.Errorf("member %q is no longer a member of the cluster and should not start", target.String())
+			fmt.Fprintf(os.Stderr, "      member %q not found in member list but dataDir exists, check operator logs for possible scaling problems\n", target.String())
 		}
 
 		// Condition: member not found, no dataDir

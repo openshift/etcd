@@ -62,7 +62,7 @@ func NewHealthHandler(lg *zap.Logger, hfunc func() Health) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusOK)
 		w.Write(d)
-		lg.Info("/health OK", zap.Int("status-code", http.StatusOK))
+		lg.Debug("/health OK", zap.Int("status-code", http.StatusOK))
 	}
 }
 
@@ -124,7 +124,7 @@ func checkHealth(lg *zap.Logger, srv etcdserver.ServerV2) Health {
 
 	if h.Health == "true" {
 		healthSuccess.Inc()
-		lg.Info("serving /health true")
+		lg.Debug("serving /health true")
 	} else {
 		healthFailed.Inc()
 	}

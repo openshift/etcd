@@ -99,7 +99,7 @@ func TestDiscoverInitialCluster(t *testing.T) {
 			dataDir:            noDataDir,
 			wantInitialCluster: emptyInitialCluster,
 			wantErr:            true,
-			wantErrString:      fmt.Sprintf("member \"unixs://127.0.0.1:%s\" dataDir has been destoyed and must be removed from the cluster", targetPort),
+			wantErrString:      fmt.Sprintf("member \"unixs://127.0.0.1:%s\" dataDir has been destroyed and must be removed from the cluster", targetPort),
 		},
 		"started member found with dataDir": {
 			targetName:         clus.Members[0].Name,
@@ -132,7 +132,7 @@ func TestDiscoverInitialCluster(t *testing.T) {
 			dataDir:            clus.Members[0].DataDir,
 			wantInitialCluster: emptyInitialCluster,
 			wantErr:            true,
-			wantErrString:      fmt.Sprintf("member \"unixs://%s:%s\" is no longer a member of the cluster and should not start", targetHostNotFound, targetPort),
+			wantErrString:      "timed out",
 		},
 		"member not found no dataDir": {
 			targetName:         "not-a-member",

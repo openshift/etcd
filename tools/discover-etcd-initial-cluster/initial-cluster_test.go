@@ -1,11 +1,9 @@
-package discover_etcd_initial_cluster
+package main
 
 import (
 	"bytes"
 	"context"
 	"fmt"
-	"go.etcd.io/etcd/integration"
-	"go.etcd.io/etcd/pkg/transport"
 	"io"
 	"log"
 	"net"
@@ -15,6 +13,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"go.etcd.io/etcd/client/pkg/v3/transport"
+	"go.etcd.io/etcd/tests/v3/integration"
 )
 
 var testTLSInfo = transport.TLSInfo{

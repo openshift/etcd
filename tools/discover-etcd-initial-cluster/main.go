@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
-	discover_etcd_initial_cluster "go.etcd.io/etcd/openshift-tools/pkg/discover-etcd-initial-cluster"
 )
 
 // copy from `utilflag "k8s.io/component-base/cli/flag"`
@@ -27,7 +26,7 @@ func main() {
 	pflag.CommandLine.SetNormalizeFunc(WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
 
-	command := discover_etcd_initial_cluster.NewDiscoverEtcdInitialClusterCommand()
+	command := NewDiscoverEtcdInitialClusterCommand()
 	if err := command.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)

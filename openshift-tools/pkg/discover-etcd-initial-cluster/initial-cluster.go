@@ -110,10 +110,10 @@ func (o *DiscoverEtcdInitialClusterOptions) Validate() error {
 		return fmt.Errorf("missing --target-name")
 	}
 	if len(o.TargetPeerURLPort) == 0 {
-		fmt.Errorf("missing TargetPeerURLPort")
+		return fmt.Errorf("missing TargetPeerURLPort")
 	}
 	if len(o.TargetPeerURLScheme) == 0 {
-		fmt.Errorf("missing TargetPeerURLScheme")
+		return fmt.Errorf("missing TargetPeerURLScheme")
 	}
 	return nil
 }

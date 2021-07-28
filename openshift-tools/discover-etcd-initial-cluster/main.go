@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
-	discover_etcd_initial_cluster "go.etcd.io/etcd/openshift-tools/pkg/discover-etcd-initial-cluster"
+	discover_etcd_initial_cluster "go.etcd.io/etcd/v3/openshift-tools/pkg/discover-etcd-initial-cluster"
 )
 
 // copy from `utilflag "k8s.io/component-base/cli/flag"`

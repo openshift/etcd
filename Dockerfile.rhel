@@ -4,7 +4,7 @@ WORKDIR /go/src/go.etcd.io/etcd
 
 COPY . .
 
-RUN ./build
+RUN GOFLAGS=-mod=readonly ./build.sh
 
 # stage 2
 FROM registry.ci.openshift.org/ocp/4.9:base

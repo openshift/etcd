@@ -110,10 +110,10 @@ func (o *DiscoverEtcdInitialClusterOptions) Validate() error {
 		return fmt.Errorf("missing --target-name")
 	}
 	if len(o.TargetPeerURLPort) == 0 {
-		fmt.Errorf("missing TargetPeerURLPort")
+		return fmt.Errorf("missing TargetPeerURLPort")
 	}
 	if len(o.TargetPeerURLScheme) == 0 {
-		fmt.Errorf("missing TargetPeerURLScheme")
+		return fmt.Errorf("missing TargetPeerURLScheme")
 	}
 	return nil
 }
@@ -150,77 +150,92 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 	}
 	defer client.Close()
 
-	target := url.URL{
-		Scheme: o.TargetPeerURLScheme,
-		Host:   fmt.Sprintf("%s:%s", o.TargetPeerURLHost, o.TargetPeerURLPort),
-	}
-
 	for i := 0; i < 10; i++ {
 		fmt.Fprintf(os.Stderr, "#### attempt %d\n", i)
 
-		// check member list on each iteration for changes
+		// Check member list on each iteration for changes.
 		cluster, err := client.MemberList(context.TODO())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "member list request failed: %v", err)
 			continue
 		}
 		logCurrentMembership(cluster.Members)
-		targetMember, found := checkTargetMember(target, cluster.Members)
 
-		// Condition: unstarted member found, no dataDir
-		// This member is part of the cluster but has not yet started. We know this because the name is populated at
-		// runtime which this member does not have.
-		// Result: populate initial cluster so etcd can communicate with peers during startup
-		if found && targetMember.Name == "" && !dataDirExists {
-			fmt.Print(getInitialCluster(o.TargetName, targetMember, cluster.Members))
-			return nil
+		initialCluster, memberFound, err := o.getInitialCluster(cluster.Members, dataDirExists)
+		if err != nil && memberFound {
+			return err
 		}
-
-		// Condition: unstarted member found with dataDir
-		// This member is part of the cluster but has not yet started, yet has a dataDir.
-		// Result: archive old dataDir and return error which will restart container
-		if found && targetMember.Name == "" && dataDirExists {
-			archivedDir, err := archiveDataDir(o.DataDir)
-			if err != nil {
-				return err
-			}
-			return fmt.Errorf("member %q is unstarted but previous members dataDir exists: archiving to %q", target.String(), archivedDir)
+		// If member is not yet part of the cluster print to stderr and retry.
+		if err != nil && !memberFound {
+			fmt.Fprintf(os.Stderr, "      %s\n#### sleeping...\n", err.Error())
+			time.Sleep(1 * time.Second)
+			continue
 		}
+		// Empty string value for initialCluster is valid.
+		fmt.Println(initialCluster)
 
-		// Condition: started member found with dataDir
-		// Result: start etcd with empty initial config
-		if found && dataDirExists {
-			return nil
-		}
+		return nil
+	}
+	return fmt.Errorf("timed out")
+}
 
-		// Condition: started member found, no dataDir
-		// A member is not actually gone forever unless it is removed from cluster with MemberRemove or the dataDir is destroyed. Since
-		// this is the latter. Do not let etcd start and report the condition as an error.
-		// Result: return error and restart container
-		if found && !dataDirExists {
-			return fmt.Errorf("member %q dataDir has been destroyed and must be removed from the cluster", target.String())
-		}
-
-		// Condition: member not found with dataDir
-		// The member has been removed from the cluster. The dataDir will be archived once the operator
-		// scales up etcd.
-		// Result: retry member check allowing operator time to scale up etcd again on this node.
-		if !found && dataDirExists {
-			fmt.Fprintf(os.Stderr, "      member %q not found in member list but dataDir exists, check operator logs for possible scaling problems\n", target.String())
-		}
-
-		// Condition: member not found, no dataDir
-		// The member list does not reflect the target member as it is waiting to be scaled up.
-		// Result: retry
-		if !found && !dataDirExists {
-			fmt.Fprintf(os.Stderr, "      member %q not found in member list, check operator logs for possible scaling problems\n", target.String())
-		}
-
-		fmt.Fprintf(os.Stderr, "#### sleeping...\n")
-		time.Sleep(1 * time.Second)
+func (o *DiscoverEtcdInitialClusterOptions) getInitialCluster(members []*etcdserverpb.Member, dataDirExists bool) (string, bool, error) {
+	target := url.URL{
+		Scheme: o.TargetPeerURLScheme,
+		Host:   fmt.Sprintf("%s:%s", o.TargetPeerURLHost, o.TargetPeerURLPort),
 	}
 
-	return fmt.Errorf("timed out")
+	targetMember, memberFound := checkTargetMember(target, members)
+
+	// Condition: unstarted member found, no dataDir
+	// This member is part of the cluster but has not yet started. We know this because the name is populated at
+	// runtime which this member does not have.
+	// Result: populate initial cluster so etcd can communicate with peers during startup
+	if memberFound && targetMember.Name == "" && !dataDirExists {
+		return formatInitialCluster(o.TargetName, targetMember, members), memberFound, nil
+	}
+
+	// Condition: unstarted member found with dataDir
+	// This member is part of the cluster but has not yet started, yet has a dataDir.
+	// Result: archive old dataDir and return error which will restart container
+	if memberFound && targetMember.Name == "" && dataDirExists {
+		archivedDir, err := archiveDataDir(o.DataDir)
+		if err != nil {
+			return "", memberFound, err
+		}
+		return "", memberFound, fmt.Errorf("member %q is unstarted but previous members dataDir exists: archiving to %q", target.String(), archivedDir)
+	}
+
+	// Condition: started member found with dataDir
+	// Result: start etcd with empty initial config
+	if memberFound && dataDirExists {
+		return "", memberFound, nil
+	}
+
+	// Condition: started member found, no dataDir
+	// A member is not actually gone forever unless it is removed from cluster with MemberRemove or the dataDir is destroyed. Since
+	// this is the latter. Do not let etcd start and report the condition as an error.
+	// Result: return error and restart container
+	if memberFound && !dataDirExists {
+		return "", memberFound, fmt.Errorf("member %q dataDir has been destroyed and must be removed from the cluster", target.String())
+	}
+
+	// Condition: member not found with dataDir
+	// The member has been removed from the cluster. The dataDir will be archived once the operator
+	// scales up etcd.
+	// Result: retry member check allowing operator time to scale up etcd again on this node.
+	if !memberFound && dataDirExists {
+		return "", memberFound, fmt.Errorf("member %q not found in member list but dataDir exists, check operator logs for possible scaling problems\n", target.String())
+	}
+
+	// Condition: member not found, no dataDir
+	// The member list does not reflect the target member as it is waiting to be scaled up.
+	// Result: retry
+	if !memberFound && !dataDirExists {
+		return "", memberFound, fmt.Errorf("member %q not found in member list, check operator logs for possible scaling problems", target.String())
+	}
+
+	return "", memberFound, nil
 }
 
 func (o *DiscoverEtcdInitialClusterOptions) getClient() (*clientv3.Client, error) {
@@ -288,8 +303,8 @@ func logCurrentMembership(members []*etcdserverpb.Member) {
 	return
 }
 
-// getInitialCluster populates the initial cluster comma delimited string in the format <peerName>=<peerUrl>.
-func getInitialCluster(targetName string, target *etcdserverpb.Member, members []*etcdserverpb.Member) string {
+// formatInitialCluster populates the initial cluster comma delimited string in the format <peerName>=<peerUrl>.
+func formatInitialCluster(targetName string, target *etcdserverpb.Member, members []*etcdserverpb.Member) string {
 	var initialCluster []string
 	for _, member := range members {
 		if member.Name == "" { // this is the signal for whether or not a given peer is started

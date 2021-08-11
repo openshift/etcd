@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+GO_BUILD_FLAGS="${GO_BUILD_FLAGS} ${GOFLAGS:+-$GOFLAGS}"
+
 source ./scripts/test_lib.sh
 
 GIT_SHA=$(git rev-parse --short HEAD || echo "GitNotFound")

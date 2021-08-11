@@ -6,7 +6,7 @@ COPY . .
 
 RUN GOFLAGS='-mod=readonly' GO_BUILD_FLAGS='-v' ./build.sh
 
-# stage 2
+# stage 2 (note: any changes should reflect in Dockerfile.art)
 FROM registry.ci.openshift.org/ocp/4.9:base
 
 ENTRYPOINT ["/usr/bin/etcd"]

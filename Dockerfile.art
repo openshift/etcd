@@ -10,7 +10,7 @@ RUN mkdir -p /go/src/go.etcd.io/
 RUN ln -s $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app /go/src/go.etcd.io/etcd
 
 # stage 2 (note: any changes should reflect in Dockerfile.rhel)
-FROM registry.ci.openshift.org/ocp/4.9:base
+FROM registry.ci.openshift.org/ocp/4.10:base
 
 ENTRYPOINT ["/usr/bin/etcd"]
 

@@ -41,7 +41,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const maxLearners = 1
+const maxLearners = 5
 
 // RaftCluster is a list of Members that belong to the same raft cluster
 type RaftCluster struct {

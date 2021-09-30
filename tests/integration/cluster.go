@@ -32,6 +32,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest"
+
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/client/pkg/v3/testutil"
 	"go.etcd.io/etcd/client/pkg/v3/tlsutil"
@@ -45,6 +48,7 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/etcdhttp"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/membership"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/rafthttp"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v2http"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3client"
@@ -54,8 +58,6 @@ import (
 	lockpb "go.etcd.io/etcd/server/v3/etcdserver/api/v3lock/v3lockpb"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3rpc"
 	"go.etcd.io/etcd/server/v3/verify"
-	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest"
 
 	"github.com/soheilhy/cmux"
 	"go.uber.org/zap"
@@ -171,6 +173,7 @@ type ClusterConfig struct {
 
 	WatchProgressNotifyInterval time.Duration
 	CorruptCheckTime            time.Duration
+	ExperimentalMaxLearners     int
 }
 
 type cluster struct {
@@ -334,6 +337,7 @@ func (c *cluster) mustNewMember(t testutil.TB, memberNumber int64) *member {
 			leaseCheckpointInterval:     c.cfg.LeaseCheckpointInterval,
 			WatchProgressNotifyInterval: c.cfg.WatchProgressNotifyInterval,
 			CorruptCheckTime:            c.cfg.CorruptCheckTime,
+			ExperimentalMaxLearners:     c.cfg.ExperimentalMaxLearners,
 		})
 	m.DiscoveryURL = c.cfg.DiscoveryURL
 	if c.cfg.UseGRPC {
@@ -638,6 +642,7 @@ type memberConfig struct {
 	leaseCheckpointPersist      bool
 	WatchProgressNotifyInterval time.Duration
 	CorruptCheckTime            time.Duration
+	ExperimentalMaxLearners     int
 }
 
 // mustNewMember return an inited member with the given name. If peerTLS is
@@ -744,7 +749,10 @@ func mustNewMember(t testutil.TB, mcfg memberConfig) *member {
 		m.CorruptCheckTime = mcfg.CorruptCheckTime
 	}
 	m.WarningApplyDuration = embed.DefaultWarningApplyDuration
-
+	m.ExperimentalMaxLearners = membership.DefaultMaxLearners
+	if mcfg.ExperimentalMaxLearners != 0 {
+		m.ExperimentalMaxLearners = mcfg.ExperimentalMaxLearners
+	}
 	m.V2Deprecation = config.V2_DEPR_DEFAULT
 	m.grpcServerRecorder = &grpc_testing.GrpcRecorder{}
 	m.Logger = memberLogger(t, mcfg.name)

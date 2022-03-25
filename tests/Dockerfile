@@ -42,9 +42,9 @@ RUN rm -rf ${GOROOT} \
 RUN mkdir -p ${GOPATH}/src/go.etcd.io/etcd
 WORKDIR ${GOPATH}/src/go.etcd.io/etcd
 
-ADD ./scripts/install-marker.sh /tmp/install-marker.sh
+ADD ./scripts/install-marker.sh /home/deads/workspaces/etcd/src/etcd.io/test-temp/install-marker.sh
 
-RUN /tmp/install-marker.sh amd64 \
-  && rm -f /tmp/install-marker.sh \
+RUN /home/deads/workspaces/etcd/src/etcd.io/test-temp/install-marker.sh amd64 \
+  && rm -f /home/deads/workspaces/etcd/src/etcd.io/test-temp/install-marker.sh \
   && curl -s https://codecov.io/bash >/codecov \
   && chmod 700 /codecov

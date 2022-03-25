@@ -51,9 +51,9 @@ func mockConfig_withTLS() {}
 func ExampleConfig_withTLS() {
 	forUnitTestsRunInMockedContext(mockConfig_withTLS, func() {
 		tlsInfo := transport.TLSInfo{
-			CertFile:      "/tmp/test-certs/test-name-1.pem",
-			KeyFile:       "/tmp/test-certs/test-name-1-key.pem",
-			TrustedCAFile: "/tmp/test-certs/trusted-ca.pem",
+			CertFile:      "/home/deads/workspaces/etcd/src/etcd.io/test-temp/test-certs/test-name-1.pem",
+			KeyFile:       "/home/deads/workspaces/etcd/src/etcd.io/test-temp/test-certs/test-name-1-key.pem",
+			TrustedCAFile: "/home/deads/workspaces/etcd/src/etcd.io/test-temp/test-certs/trusted-ca.pem",
 		}
 		tlsConfig, err := tlsInfo.ClientConfig()
 		if err != nil {

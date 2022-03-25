@@ -1,5 +1,5 @@
 #!/bin/sh
-rm -rf /tmp/m1.data /tmp/m2.data /tmp/m3.data
+rm -rf /home/deads/workspaces/etcd/src/etcd.io/test-temp/m1.data /home/deads/workspaces/etcd/src/etcd.io/test-temp/m2.data /home/deads/workspaces/etcd/src/etcd.io/test-temp/m3.data
 
 goreman -f /certs/Procfile start &
 

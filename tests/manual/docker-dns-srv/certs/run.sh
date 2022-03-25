@@ -1,5 +1,5 @@
 #!/bin/sh
-rm -rf /tmp/m{1,2,3,4,5,6}.data
+rm -rf /home/deads/workspaces/etcd/src/etcd.io/test-temp/m{1,2,3,4,5,6}.data
 
 /etc/init.d/bind9 start
 

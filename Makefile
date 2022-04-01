@@ -150,16 +150,16 @@ compile-setup-gopath-with-docker-test:
 test:
 	$(info TEST_OPTS: $(TEST_OPTS))
 	$(info log-file: test-$(TEST_SUFFIX).log)
-	$(TEST_OPTS) ./test.sh 2>&1 | tee test-$(TEST_SUFFIX).log
+	$(TEST_OPTS) ./test.sh
 	! egrep "(--- FAIL:|DATA RACE|panic: test timed out|appears to have leaked)" -B50 -A10 test-$(TEST_SUFFIX).log
 
 test-smoke:
 	$(info log-file: test-$(TEST_SUFFIX).log)
-	PASSES="fmt build unit" ./test.sh 2<&1 | tee test-$(TEST_SUFFIX).log
+	PASSES="fmt build unit" ./test.sh
 
 test-full:
 	$(info log-file: test-$(TEST_SUFFIX).log)
-	PASSES="fmt build release unit integration functional e2e grpcproxy" ./test.sh 2<&1 | tee test-$(TEST_SUFFIX).log
+	PASSES="fmt build release unit integration functional e2e grpcproxy" ./test.sh
 
 docker-test:
 	$(info GO_VERSION: $(GO_VERSION))
@@ -173,7 +173,7 @@ docker-test:
 	  $(TMP_DIR_MOUNT_FLAG) \
 	  --mount type=bind,source=`pwd`,destination=/go/src/go.etcd.io/etcd \
 	  gcr.io/etcd-development/etcd-test:go$(GO_VERSION) \
-	  /bin/bash -c "$(TEST_OPTS) ./test.sh 2>&1 | tee test-$(TEST_SUFFIX).log"
+	  /bin/bash -c "$(TEST_OPTS) ./test.sh"
 	! egrep "(--- FAIL:|DATA RACE|panic: test timed out|appears to have leaked)" -B50 -A10 test-$(TEST_SUFFIX).log
 
 docker-test-coverage:

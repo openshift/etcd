@@ -154,7 +154,7 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 		fmt.Fprintf(os.Stderr, "#### attempt %d\n", i)
 
 		// Check member list on each iteration for changes.
-		cluster, err := client.MemberList(context.TODO())
+		cluster, err := client.Cluster.(clientv3.NonLinearizeableMemberLister).NonLinearizeableMemberList(context.TODO())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "member list request failed: %v", err)
 			continue

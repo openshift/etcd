@@ -20,12 +20,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.etcd.io/etcd/etcdserver"
 	"go.etcd.io/etcd/etcdserver/etcdserverpb"
 	"go.etcd.io/etcd/raft"
-	"go.uber.org/zap"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -34,9 +34,9 @@ const (
 )
 
 // HandleMetricsHealth registers metrics and health handlers.
-func HandleMetricsHealth(lg *zap.Logger, mux *http.ServeMux, srv etcdserver.ServerV2) {
+func HandleMetricsHealth(mux *http.ServeMux, srv etcdserver.ServerV2) {
 	mux.Handle(PathMetrics, promhttp.Handler())
-	mux.Handle(PathHealth, NewHealthHandler(lg, func() Health { return checkHealth(lg, srv) }))
+	mux.Handle(PathHealth, NewHealthHandler(func(excludedAlarms AlarmSet) Health { return checkHealth(srv, excludedAlarms) }))
 }
 
 // HandlePrometheus registers prometheus handler on '/metrics'.
@@ -45,24 +45,23 @@ func HandlePrometheus(mux *http.ServeMux) {
 }
 
 // NewHealthHandler handles '/health' requests.
-func NewHealthHandler(lg *zap.Logger, hfunc func() Health) http.HandlerFunc {
+func NewHealthHandler(hfunc func(excludedAlarms AlarmSet) Health) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-			lg.Warn("/health error", zap.Int("status-code", http.StatusMethodNotAllowed))
+			plog.Warningf("/health error (status code %d)", http.StatusMethodNotAllowed)
 			return
 		}
-		h := hfunc()
+		excludedAlarms := getExcludedAlarms(r)
+		h := hfunc(excludedAlarms)
 		d, _ := json.Marshal(h)
 		if h.Health != "true" {
 			http.Error(w, string(d), http.StatusServiceUnavailable)
-			lg.Warn("/health error", zap.String("output", string(d)), zap.Int("status-code", http.StatusServiceUnavailable))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 		w.Write(d)
-		lg.Debug("/health OK", zap.Int("status-code", http.StatusOK))
 	}
 }
 
@@ -92,23 +91,50 @@ type Health struct {
 	Health string `json:"health"`
 }
 
+type AlarmSet map[string]struct{}
+
+func getExcludedAlarms(r *http.Request) (alarms AlarmSet) {
+	alarms = make(map[string]struct{}, 2)
+	alms, found := r.URL.Query()["exclude"]
+	if found {
+		for _, alm := range alms {
+			if len(alms) == 0 {
+				continue
+			}
+			alarms[alm] = struct{}{}
+		}
+	}
+	return alarms
+}
+
 // TODO: server NOSPACE, etcdserver.ErrNoLeader in health API
 
-func checkHealth(lg *zap.Logger, srv etcdserver.ServerV2) Health {
+func checkHealth(srv etcdserver.ServerV2, excludedAlarms AlarmSet) Health {
 	h := Health{Health: "true"}
 
 	as := srv.Alarms()
 	if len(as) > 0 {
-		h.Health = "false"
 		for _, v := range as {
-			lg.Warn("serving /health false due to an alarm", zap.String("alarm", v.String()))
+			alarmName := v.Alarm.String()
+			if _, found := excludedAlarms[alarmName]; found {
+				plog.Debugf("/health excluded alarm %s", alarmName)
+				delete(excludedAlarms, alarmName)
+				continue
+			}
+			h.Health = "false"
+			plog.Warningf("/health error due to %s", v.String())
+			return h
 		}
+	}
+
+	if len(excludedAlarms) > 0 {
+		plog.Warningf("fail exclude alarms from health check, exclude alarms %+v", excludedAlarms)
 	}
 
 	if h.Health == "true" {
 		if uint64(srv.Leader()) == raft.None {
 			h.Health = "false"
-			lg.Warn("serving /health false; no leader")
+			plog.Warningf("/health error; no leader (status code %d)", http.StatusServiceUnavailable)
 		}
 	}
 
@@ -118,13 +144,13 @@ func checkHealth(lg *zap.Logger, srv etcdserver.ServerV2) Health {
 		cancel()
 		if err != nil {
 			h.Health = "false"
-			lg.Warn("serving /health false; QGET fails", zap.Error(err))
+			plog.Warningf("/health error; QGET failed %v (status code %d)", err, http.StatusServiceUnavailable)
 		}
 	}
 
 	if h.Health == "true" {
 		healthSuccess.Inc()
-		lg.Debug("serving /health true")
+		plog.Debugf("/health OK (status code %d)", http.StatusOK)
 	} else {
 		healthFailed.Inc()
 	}

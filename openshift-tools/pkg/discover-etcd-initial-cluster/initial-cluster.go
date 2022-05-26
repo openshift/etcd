@@ -150,7 +150,8 @@ func (o *DiscoverEtcdInitialClusterOptions) Run() error {
 	}
 	defer client.Close()
 
-	for i := 0; i < 10; i++ {
+	// the startupProbe waits for 180s, so we are giving 135s to this process and 45s to the etcd that runs after us.
+	for i := 0; i < 135; i++ {
 		fmt.Fprintf(os.Stderr, "#### attempt %d\n", i)
 
 		// Check member list on each iteration for changes.

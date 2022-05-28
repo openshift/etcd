@@ -1,17 +1,17 @@
 module go.etcd.io/etcd
 
 require (
+	github.com/BurntSushi/toml v1.1.0 // indirect
 	github.com/bgentry/speakeasy v0.1.0
 	github.com/cockroachdb/datadriven v0.0.0-20190809214429-80d97fb3cbaa
 	github.com/coreos/go-semver v0.2.0
 	github.com/coreos/go-systemd v0.0.0-20180511133405-39ca1b05acc7
-	github.com/coreos/license-bill-of-materials v0.0.0-20190913234955-13baff47494e // indirect
 	github.com/coreos/pkg v0.0.0-20160727233714-3ac0863d7acf
 	github.com/creack/pty v1.1.7
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/dustin/go-humanize v0.0.0-20171111073723-bb3d318650d4
 	github.com/fatih/color v1.7.0 // indirect
 	github.com/gogo/protobuf v1.2.1
+	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/golang/groupcache v0.0.0-20160516000752-02826c3e7903
 	github.com/golang/protobuf v1.3.2
 	github.com/google/btree v1.0.0

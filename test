@@ -120,8 +120,14 @@ fi
 echo "Running with TEST_CPUS:" "${TEST_CPUS}"
 
 # determine whether target supports race detection
-if [ "$GOARCH" == "amd64" ]; then
-	RACE="--race"
+if [ -z "${RACE}" ] ; then
+  if [ "$GOARCH" == "amd64" ]; then
+    RACE="--race"
+  else
+    RACE="--race=false"
+  fi
+else
+  RACE="--race=${RACE:-true}"
 fi
 
 RUN_ARG=""
@@ -462,6 +468,7 @@ function govet_shadow_pass {
 	# Golang 1.12 onwards the experimental -shadow option is no longer available with go vet
 	go get golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow
 	export PATH=${GOPATH}/bin:${PATH}
+	# shellcheck disable=SC2230
 	shadow_tool=$(which shadow)
 	vetRes=$(go vet -all -vettool="${shadow_tool}" "${TEST[@]}")
 	if [ -n "${vetRes}" ]; then

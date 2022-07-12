@@ -35,6 +35,8 @@ var (
 	ErrGRPCLeaseExist       = status.New(codes.FailedPrecondition, "etcdserver: lease already exists").Err()
 	ErrGRPCLeaseTTLTooLarge = status.New(codes.OutOfRange, "etcdserver: too large lease TTL").Err()
 
+	ErrGRPCWatchCanceled = status.New(codes.Canceled, "etcdserver: watch canceled").Err()
+
 	ErrGRPCMemberExist            = status.New(codes.FailedPrecondition, "etcdserver: member ID already exist").Err()
 	ErrGRPCPeerURLExist           = status.New(codes.FailedPrecondition, "etcdserver: Peer URLs already exists").Err()
 	ErrGRPCMemberNotEnoughStarted = status.New(codes.FailedPrecondition, "etcdserver: re-configuration failed due to not enough started members").Err()
@@ -62,6 +64,7 @@ var (
 	ErrGRPCAuthNotEnabled       = status.New(codes.FailedPrecondition, "etcdserver: authentication is not enabled").Err()
 	ErrGRPCInvalidAuthToken     = status.New(codes.Unauthenticated, "etcdserver: invalid auth token").Err()
 	ErrGRPCInvalidAuthMgmt      = status.New(codes.InvalidArgument, "etcdserver: invalid auth management").Err()
+	ErrGRPCAuthOldRevision      = status.New(codes.InvalidArgument, "etcdserver: revision of auth store is old").Err()
 
 	ErrGRPCNoLeader                   = status.New(codes.Unavailable, "etcdserver: no leader").Err()
 	ErrGRPCNotLeader                  = status.New(codes.FailedPrecondition, "etcdserver: not leader").Err()
@@ -119,6 +122,7 @@ var (
 		ErrorDesc(ErrGRPCAuthNotEnabled):       ErrGRPCAuthNotEnabled,
 		ErrorDesc(ErrGRPCInvalidAuthToken):     ErrGRPCInvalidAuthToken,
 		ErrorDesc(ErrGRPCInvalidAuthMgmt):      ErrGRPCInvalidAuthMgmt,
+		ErrorDesc(ErrGRPCAuthOldRevision):      ErrGRPCAuthOldRevision,
 
 		ErrorDesc(ErrGRPCNoLeader):                   ErrGRPCNoLeader,
 		ErrorDesc(ErrGRPCNotLeader):                  ErrGRPCNotLeader,
@@ -177,6 +181,7 @@ var (
 	ErrPermissionNotGranted = Error(ErrGRPCPermissionNotGranted)
 	ErrAuthNotEnabled       = Error(ErrGRPCAuthNotEnabled)
 	ErrInvalidAuthToken     = Error(ErrGRPCInvalidAuthToken)
+	ErrAuthOldRevision      = Error(ErrGRPCAuthOldRevision)
 	ErrInvalidAuthMgmt      = Error(ErrGRPCInvalidAuthMgmt)
 
 	ErrNoLeader                   = Error(ErrGRPCNoLeader)

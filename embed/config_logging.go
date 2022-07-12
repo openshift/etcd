@@ -211,10 +211,14 @@ func (cfg *Config) setupLogging() error {
 					grpcLogOnce.Do(func() {
 						// debug true, enable info, warning, error
 						// debug false, only discard info
-						var gl grpclog.LoggerV2
-						gl, err = logutil.NewGRPCLoggerV2(copied)
-						if err == nil {
-							grpclog.SetLoggerV2(gl)
+						if cfg.LogLevel == "debug" {
+							var gl grpclog.LoggerV2
+							gl, err = logutil.NewGRPCLoggerV2(copied)
+							if err == nil {
+								grpclog.SetLoggerV2(gl)
+							}
+						} else {
+							grpclog.SetLoggerV2(grpclog.NewLoggerV2(ioutil.Discard, os.Stderr, os.Stderr))
 						}
 					})
 					return nil
@@ -260,7 +264,11 @@ func (cfg *Config) setupLogging() error {
 					c.loggerWriteSyncer = syncer
 
 					grpcLogOnce.Do(func() {
-						grpclog.SetLoggerV2(logutil.NewGRPCLoggerV2FromZapCore(cr, syncer))
+						if cfg.LogLevel == "debug" {
+							grpclog.SetLoggerV2(logutil.NewGRPCLoggerV2FromZapCore(cr, syncer))
+						} else {
+							grpclog.SetLoggerV2(grpclog.NewLoggerV2(ioutil.Discard, os.Stderr, os.Stderr))
+						}
 					})
 					return nil
 				}

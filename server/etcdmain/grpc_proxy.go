@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
@@ -179,6 +180,16 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 	defer lg.Sync()
 
 	grpclog.SetLoggerV2(zapgrpc.NewLogger(lg))
+
+	log.Printf("DEBUG: cmd line opt listen-cipher-suites: %v\n", grpcProxyListenCipherSuites)
+
+	if len(grpcProxyListenCipherSuites) == 0 {
+		if ciphers := os.Getenv("ETCD_CIPHER_SUITES"); ciphers != "" {
+			grpcProxyListenCipherSuites = strings.Split(ciphers, ",")
+		}
+	}
+
+	log.Printf("DEBUG: cipher suites after env lookup: %v\n", grpcProxyListenCipherSuites)
 
 	// The proxy itself (ListenCert) can have not-empty CN.
 	// The empty CN is required for grpcProxyCert.

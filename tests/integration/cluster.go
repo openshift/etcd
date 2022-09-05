@@ -172,6 +172,7 @@ type ClusterConfig struct {
 	LeaseCheckpointPersist  bool
 
 	WatchProgressNotifyInterval time.Duration
+	ExperimentalMaxLearners     int
 	CorruptCheckTime            time.Duration
 	ExperimentalMaxLearners     int
 }
@@ -336,6 +337,7 @@ func (c *cluster) mustNewMember(t testutil.TB, memberNumber int64) *member {
 			leaseCheckpointPersist:      c.cfg.LeaseCheckpointPersist,
 			leaseCheckpointInterval:     c.cfg.LeaseCheckpointInterval,
 			WatchProgressNotifyInterval: c.cfg.WatchProgressNotifyInterval,
+			ExperimentalMaxLearners:     c.cfg.ExperimentalMaxLearners,
 			CorruptCheckTime:            c.cfg.CorruptCheckTime,
 			ExperimentalMaxLearners:     c.cfg.ExperimentalMaxLearners,
 		})
@@ -641,6 +643,7 @@ type memberConfig struct {
 	leaseCheckpointInterval     time.Duration
 	leaseCheckpointPersist      bool
 	WatchProgressNotifyInterval time.Duration
+	ExperimentalMaxLearners     int
 	CorruptCheckTime            time.Duration
 	ExperimentalMaxLearners     int
 }

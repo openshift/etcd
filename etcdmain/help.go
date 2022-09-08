@@ -85,6 +85,10 @@ Member:
     Frequency duration of server-to-client ping to check if a connection is alive (0 to disable).
   --grpc-keepalive-timeout '20s'
     Additional duration of wait before closing a non-responsive connection (0 to disable).
+  --socket-reuse-port 'false'
+    Enable to set socket option SO_REUSEPORT on listeners allowing rebinding of a port already in use.
+  --socket-reuse-address 'false'
+	Enable to set socket option SO_REUSEADDR on listeners allowing binding to an address in TIME_WAIT state.
 
 Clustering:
   --initial-advertise-peer-urls 'http://localhost:2380'
@@ -182,6 +186,10 @@ Logging:
     Specify 'stdout' or 'stderr' to skip journald logging even when running under systemd, or list of comma separated output targets.
   --log-level 'info'
     Configures log level. Only supports debug, info, warn, error, panic, or fatal.
+  --enable-log-rotation 'false'
+    Enable log rotation of a single log-outputs file target.
+  --log-rotation-config-json '{"maxsize": 100, "maxage": 0, "maxbackups": 0, "localtime": false, "compress": false}'
+    Configures log rotation if enabled with a JSON logger config. MaxSize(MB), MaxAge(days,0=no limit), MaxBackups(0=no limit), LocalTime(use computers local time), Compress(gzip)".
 
 v2 Proxy (to be deprecated in v4):
   --proxy 'off'

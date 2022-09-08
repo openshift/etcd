@@ -113,6 +113,14 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		e = nil
 	}()
 
+	if cfg.logger != nil && !cfg.SocketOpts.Empty() {
+		cfg.logger.Info(
+			"configuring socket options",
+			zap.Bool("reuse-address", cfg.SocketOpts.ReuseAddress),
+			zap.Bool("reuse-port", cfg.SocketOpts.ReusePort),
+		)
+	}
+
 	if e.cfg.logger != nil {
 		e.cfg.logger.Info(
 			"configuring peer listeners",
@@ -189,6 +197,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		MaxTxnOps:                   cfg.MaxTxnOps,
 		MaxRequestBytes:             cfg.MaxRequestBytes,
 		MaxConcurrentStreams:        cfg.MaxConcurrentStreams,
+		SocketOpts:                  cfg.SocketOpts,
 		StrictReconfigCheck:         cfg.StrictReconfigCheck,
 		ClientCertAuthEnabled:       cfg.ClientTLSInfo.ClientCertAuth,
 		AuthToken:                   cfg.AuthToken,
@@ -522,7 +531,11 @@ func configurePeerListeners(cfg *Config) (peers []*peerListener, err error) {
 			}
 		}
 		peers[i] = &peerListener{close: func(context.Context) error { return nil }}
-		peers[i].Listener, err = rafthttp.NewListener(u, &cfg.PeerTLSInfo)
+		peers[i].Listener, err = transport.NewListenerWithOpts(u.Host, u.Scheme,
+			transport.WithTLSInfo(&cfg.PeerTLSInfo),
+			transport.WithSocketOpts(&cfg.SocketOpts),
+			transport.WithTimeout(rafthttp.ConnReadTimeout, rafthttp.ConnWriteTimeout),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -652,8 +665,10 @@ func configureClientListeners(cfg *Config) (sctxs map[string]*serveCtx, err erro
 			oldctx.insecure = oldctx.insecure || sctx.insecure
 			continue
 		}
-
-		if sctx.l, err = net.Listen(network, addr); err != nil {
+		if sctx.l, err = transport.NewListenerWithOpts(addr, u.Scheme,
+			transport.WithSocketOpts(&cfg.SocketOpts),
+			transport.WithSkipTLSInfoCheck(true),
+		); err != nil {
 			return nil, err
 		}
 		// net.Listener will rewrite ipv4 0.0.0.0 to ipv6 [::], breaking
@@ -777,7 +792,10 @@ func (e *Etcd) serveMetrics() (err error) {
 			if murl.Scheme == "http" {
 				tlsInfo = nil
 			}
-			ml, err := transport.NewListener(murl.Host, murl.Scheme, tlsInfo)
+			ml, err := transport.NewListenerWithOpts(murl.Host, murl.Scheme,
+				transport.WithTLSInfo(tlsInfo),
+				transport.WithSocketOpts(&e.cfg.SocketOpts),
+			)
 			if err != nil {
 				return err
 			}

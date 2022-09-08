@@ -1,20 +1,14 @@
 approvers:
-- heyitsanthony
-- philips
-- fanminshi
-- gyuho
-- mitake
-- jpbetz
-- xiang90
-- hexfusion
+- deads2k
+- hasbro17
+- dusk125
 reviewers:
-- heyitsanthony
-- philips
-- fanminshi
-- gyuho
-- mitake
-- jpbetz
-- xiang90
-- wenjiaswe
-- jingyih
-- hexfusion
+- deads2k
+- dusk125
+- hasbro17
+- smarterclayton
+- wking
+- EmilyM1
+- Elbehery
+- tjungblu
+component: "Etcd"

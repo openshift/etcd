@@ -1,7 +1,5 @@
 module go.etcd.io/etcd
 
-go 1.16
-
 require (
 	github.com/bgentry/speakeasy v0.1.0
 	github.com/cockroachdb/datadriven v0.0.0-20190809214429-80d97fb3cbaa
@@ -50,6 +48,9 @@ require (
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2
 	google.golang.org/grpc v1.26.0
 	gopkg.in/cheggaaa/pb.v1 v1.0.25
+	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.4.0
 	sigs.k8s.io/yaml v1.1.0
 )
+
+go 1.16

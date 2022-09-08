@@ -64,6 +64,20 @@ etcd_build() {
 		-o "${out}/etcdctl" ${REPO_PATH}/etcdctl || return
 }
 
+
+openshift_tools_build() {
+	out="bin"
+	if [[ -n "${BINDIR}" ]]; then out="${BINDIR}"; fi
+	toggle_failpoints_default
+
+	# Static compilation is useful when etcd is run in a container. $GO_BUILD_FLAGS is OK
+	# shellcheck disable=SC2086
+	CGO_ENABLED=0 go build $GO_BUILD_FLAGS \
+		-installsuffix cgo \
+		-ldflags "$GO_LDFLAGS" \
+		-o "${out}/discover-etcd-initial-cluster" "go.etcd.io/etcd/openshift-tools/discover-etcd-initial-cluster" || return
+}
+
 tools_build() {
 	out="bin"
 	if [[ -n "${BINDIR}" ]]; then out="${BINDIR}"; fi
@@ -95,4 +109,5 @@ fi
 # only build when called directly, not sourced
 if echo "$0" | grep "build$" >/dev/null; then
 	etcd_build
+	openshift_tools_build
 fi

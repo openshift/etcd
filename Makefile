@@ -12,7 +12,7 @@
 
 .PHONY: build
 build:
-	GO_BUILD_FLAGS="-v" ./build
+	GO111MODULE=on GO_BUILD_FLAGS="-v -mod vendor" ./build
 	./bin/etcd --version
 	./bin/etcdctl version
 

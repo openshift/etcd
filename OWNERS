@@ -1,0 +1,13 @@
+approvers:
+- deads2k
+- hasbro17
+- dusk125
+- Elbehery
+- tjungblu
+reviewers:
+- deads2k
+- dusk125
+- hasbro17
+- Elbehery
+- tjungblu
+component: "Etcd"

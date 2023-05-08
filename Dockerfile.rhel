@@ -1,0 +1,21 @@
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-etcd-golang-1.19 AS builder
+
+WORKDIR /go/src/go.etcd.io/etcd
+
+
+COPY . .
+
+RUN GOFLAGS='-mod=readonly' GO_BUILD_FLAGS='-v' ./build.sh
+
+# stage 2 (note: any changes should reflect in Dockerfile.art)
+FROM registry.ci.openshift.org/ocp/4.9:base
+
+ENTRYPOINT ["/usr/bin/etcd"]
+
+COPY --from=builder /go/src/go.etcd.io/etcd/bin/etcd /usr/bin/
+COPY --from=builder /go/src/go.etcd.io/etcd/bin/etcdctl /usr/bin/
+COPY --from=builder /go/src/go.etcd.io/etcd/bin/discover-etcd-initial-cluster /usr/bin/
+
+LABEL io.k8s.display-name="etcd server" \
+      io.k8s.description="etcd is a distributed key-value store which stores the persistent master state for Kubernetes and OpenShift." \
+      maintainer="Sam Batschelet <sbatsche@redhat.com>"

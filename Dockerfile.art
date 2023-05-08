@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-etcd-golang-1.16 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-etcd-golang-1.19 AS builder
 
 COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
 WORKDIR $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app

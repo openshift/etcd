@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-etcd-golang-1.16 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-etcd-golang-1.19 AS builder
 
 WORKDIR /go/src/go.etcd.io/etcd
 
@@ -7,7 +7,7 @@ COPY . .
 RUN GOFLAGS='-mod=readonly' GO_BUILD_FLAGS='-v' ./build.sh
 
 # stage 2 (note: any changes should reflect in Dockerfile.art)
-FROM registry.ci.openshift.org/ocp/4.9:base
+FROM registry.ci.openshift.org/ocp/4.14:base
 
 ENTRYPOINT ["/usr/bin/etcd"]
 

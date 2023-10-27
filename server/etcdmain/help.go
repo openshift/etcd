@@ -277,11 +277,13 @@ Experimental feature:
   --experimental-memory-mlock
     Enable to enforce etcd pages (in particular bbolt) to stay in RAM.
   --experimental-warning-apply-duration '100ms'
-	Warning is generated if requests take more than this duration.
+    Warning is generated if requests take more than this duration.
   --experimental-txn-mode-write-with-shared-buffer 'true'
     Enable the write transaction to use a shared buffer in its readonly check operations.
   --experimental-bootstrap-defrag-threshold-megabytes
     Enable the defrag during etcd server bootstrap on condition that it will free at least the provided threshold of disk space. Needs to be set to non-zero value to take effect.
+  --experimental-max-learners '1'
+    Set the max number of learner members allowed in the cluster membership.
   --experimental-stop-grpc-service-on-defrag
     Enable etcd gRPC service to stop serving client requests on defragmentation.
 

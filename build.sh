@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+GO_BUILD_FLAGS="${GO_BUILD_FLAGS} ${GOFLAGS:+-$GOFLAGS}"
+
 source ./scripts/test_lib.sh
 
 GIT_SHA=$(git rev-parse --short HEAD || echo "GitNotFound")
@@ -75,6 +77,17 @@ etcd_build() {
       "-ldflags=${GO_LDFLAGS[*]}" \
       -o="../${out}/etcdctl" . || return 2
   ) || return 2
+
+  run rm -f "${out}/discover-etcd-initial-cluster"
+  # shellcheck disable=SC2086
+  (
+    cd ./openshift-tools/discover-etcd-initial-cluster
+    run env GO_BUILD_FLAGS="${GO_BUILD_FLAGS}" "${GO_BUILD_ENV[@]}" go build $GO_BUILD_FLAGS \
+      -installsuffix=cgo \
+      "-ldflags=${GO_LDFLAGS[*]}" \
+      -o="../../${out}/discover-etcd-initial-cluster" . || return 2
+  ) || return 2
+
   # Verify whether symbol we overriden exists
   # For cross-compiling we cannot run: ${out}/etcd --version | grep -q "Git SHA: ${GIT_SHA}"
 

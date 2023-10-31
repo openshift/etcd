@@ -322,7 +322,7 @@ func TestGrpcproxyAndCommonName(t *testing.T) {
 }
 
 func TestGrpcproxyAndListenCipherSuite(t *testing.T) {
-	skipInShortMode(t)
+	e2e.SkipInShortMode(t)
 
 	cases := []struct {
 		name string
@@ -331,7 +331,7 @@ func TestGrpcproxyAndListenCipherSuite(t *testing.T) {
 		{
 			name: "ArgsWithCipherSuites",
 			args: []string{
-				binDir + "/etcd",
+				e2e.BinDir + "/etcd",
 				"grpc-proxy",
 				"start",
 				"--listen-cipher-suites", "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
@@ -340,7 +340,7 @@ func TestGrpcproxyAndListenCipherSuite(t *testing.T) {
 		{
 			name: "ArgsWithoutCipherSuites",
 			args: []string{
-				binDir + "/etcd",
+				e2e.BinDir + "/etcd",
 				"grpc-proxy",
 				"start",
 				"--listen-cipher-suites", "",
@@ -350,7 +350,7 @@ func TestGrpcproxyAndListenCipherSuite(t *testing.T) {
 
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			pw, err := spawnCmd(test.args, nil)
+			pw, err := e2e.SpawnCmd(test.args, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

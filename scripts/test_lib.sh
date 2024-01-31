@@ -305,6 +305,11 @@ function tool_exists {
   fi
 }
 
+# Ensure gobin is available, as it runs majority of the tools
+if ! command -v "gobin" >/dev/null && [[ ! "$GO_BUILD_FLAGS" =~ 'mod=readonly' ]]; then
+    run env GO111MODULE=off go get github.com/myitcv/gobin || exit 1
+fi
+
 # tool_get_bin [tool] - returns absolute path to a tool binary (or returns error)
 function tool_get_bin {
   local tool="$1"

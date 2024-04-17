@@ -15,6 +15,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -137,17 +138,21 @@ type EtcdProcessCluster struct {
 }
 
 type EtcdProcessClusterConfig struct {
-	ExecPath      string
-	DataDirPath   string
-	KeepDataDir   bool
-	GoFailEnabled bool
-	PeerProxy     bool
-	EnvVars       map[string]string
+	ExecPath            string
+	DataDirPath         string
+	KeepDataDir         bool
+	GoFailEnabled       bool
+	GoFailClientTimeout time.Duration
+	PeerProxy           bool
+	EnvVars             map[string]string
 
 	ClusterSize int
 
-	BaseScheme string
-	BasePort   int
+	// BasePeerScheme specifies scheme of --listen-peer-urls and --initial-advertise-peer-urls
+	BasePeerScheme string
+	BasePort       int
+	// BaseClientScheme specifies scheme of --listen-client-urls, --listen-client-http-urls and --initial-advertise-client-urls
+	BaseClientScheme string
 
 	MetricsURLScheme string
 
@@ -241,21 +246,11 @@ func StartEtcdProcessCluster(t testing.TB, epc *EtcdProcessCluster, cfg *EtcdPro
 }
 
 func (cfg *EtcdProcessClusterConfig) ClientScheme() string {
-	if cfg.ClientTLS == ClientTLS {
-		return "https"
-	}
-	return "http"
+	return setupScheme(cfg.BaseClientScheme, cfg.ClientTLS == ClientTLS)
 }
 
 func (cfg *EtcdProcessClusterConfig) PeerScheme() string {
-	peerScheme := cfg.BaseScheme
-	if peerScheme == "" {
-		peerScheme = "http"
-	}
-	if cfg.IsPeerTLS {
-		peerScheme += "s"
-	}
-	return peerScheme
+	return setupScheme(cfg.BasePeerScheme, cfg.IsPeerTLS)
 }
 
 func (cfg *EtcdProcessClusterConfig) EtcdServerProcessConfigs(tb testing.TB) []*EtcdServerProcessConfig {
@@ -283,10 +278,10 @@ func (cfg *EtcdProcessClusterConfig) EtcdServerProcessConfigs(tb testing.TB) []*
 		clientHttpPort := port + 4
 
 		if cfg.ClientTLS == ClientTLSAndNonTLS {
-			curl = clientURL(clientPort, ClientNonTLS)
-			curls = []string{curl, clientURL(clientPort, ClientTLS)}
+			curl = clientURL(cfg.ClientScheme(), clientPort, ClientNonTLS)
+			curls = []string{curl, clientURL(cfg.ClientScheme(), clientPort, ClientTLS)}
 		} else {
-			curl = clientURL(clientPort, cfg.ClientTLS)
+			curl = clientURL(cfg.ClientScheme(), clientPort, cfg.ClientTLS)
 			curls = []string{curl}
 		}
 
@@ -324,7 +319,7 @@ func (cfg *EtcdProcessClusterConfig) EtcdServerProcessConfigs(tb testing.TB) []*
 		}
 		var clientHttpUrl string
 		if cfg.ClientHttpSeparate {
-			clientHttpUrl = clientURL(clientHttpPort, cfg.ClientTLS)
+			clientHttpUrl = clientURL(cfg.ClientScheme(), clientHttpPort, cfg.ClientTLS)
 			args = append(args, "--listen-client-http-urls", clientHttpUrl)
 		}
 		args = AddV2Args(args)
@@ -399,21 +394,22 @@ func (cfg *EtcdProcessClusterConfig) EtcdServerProcessConfigs(tb testing.TB) []*
 		}
 
 		etcdCfgs[i] = &EtcdServerProcessConfig{
-			lg:            lg,
-			ExecPath:      cfg.ExecPath,
-			Args:          args,
-			EnvVars:       envVars,
-			TlsArgs:       cfg.TlsArgs(),
-			DataDirPath:   dataDirPath,
-			KeepDataDir:   cfg.KeepDataDir,
-			Name:          name,
-			Purl:          peerAdvertiseUrl,
-			Acurl:         curl,
-			Murl:          murl,
-			InitialToken:  cfg.InitialToken,
-			ClientHttpUrl: clientHttpUrl,
-			GoFailPort:    gofailPort,
-			Proxy:         proxyCfg,
+			lg:                  lg,
+			ExecPath:            cfg.ExecPath,
+			Args:                args,
+			EnvVars:             envVars,
+			TlsArgs:             cfg.TlsArgs(),
+			DataDirPath:         dataDirPath,
+			KeepDataDir:         cfg.KeepDataDir,
+			Name:                name,
+			Purl:                peerAdvertiseUrl,
+			Acurl:               curl,
+			Murl:                murl,
+			InitialToken:        cfg.InitialToken,
+			ClientHttpUrl:       clientHttpUrl,
+			GoFailPort:          gofailPort,
+			GoFailClientTimeout: cfg.GoFailClientTimeout,
+			Proxy:               proxyCfg,
 		}
 	}
 
@@ -426,13 +422,13 @@ func (cfg *EtcdProcessClusterConfig) EtcdServerProcessConfigs(tb testing.TB) []*
 	return etcdCfgs
 }
 
-func clientURL(port int, connType ClientConnType) string {
+func clientURL(scheme string, port int, connType ClientConnType) string {
 	curlHost := fmt.Sprintf("localhost:%d", port)
 	switch connType {
 	case ClientNonTLS:
-		return (&url.URL{Scheme: "http", Host: curlHost}).String()
+		return (&url.URL{Scheme: scheme, Host: curlHost}).String()
 	case ClientTLS:
-		return (&url.URL{Scheme: "https", Host: curlHost}).String()
+		return (&url.URL{Scheme: ToTLS(scheme), Host: curlHost}).String()
 	default:
 		panic(fmt.Sprintf("Unsupported connection type %v", connType))
 	}
@@ -486,6 +482,14 @@ func (epc *EtcdProcessCluster) EndpointsV2() []string {
 
 func (epc *EtcdProcessCluster) EndpointsV3() []string {
 	return epc.Endpoints(func(ep EtcdProcess) []string { return ep.EndpointsV3() })
+}
+
+func (epc *EtcdProcessCluster) EndpointsGRPC() []string {
+	return epc.Endpoints(func(ep EtcdProcess) []string { return ep.EndpointsGRPC() })
+}
+
+func (epc *EtcdProcessCluster) EndpointsHTTP() []string {
+	return epc.Endpoints(func(ep EtcdProcess) []string { return ep.EndpointsHTTP() })
 }
 
 func (epc *EtcdProcessCluster) Endpoints(f func(ep EtcdProcess) []string) (ret []string) {
@@ -575,4 +579,72 @@ func (epc *EtcdProcessCluster) WithStopSignal(sig os.Signal) (ret os.Signal) {
 		ret = p.WithStopSignal(sig)
 	}
 	return ret
+}
+
+// WaitLeader returns index of the member in c.Members() that is leader
+// or fails the test (if not established in 30s).
+func (epc *EtcdProcessCluster) WaitLeader(t testing.TB) int {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return epc.WaitMembersForLeader(ctx, t, epc.Procs)
+}
+
+// WaitMembersForLeader waits until given members agree on the same leader,
+// and returns its 'index' in the 'membs' list
+func (epc *EtcdProcessCluster) WaitMembersForLeader(ctx context.Context, t testing.TB, membs []EtcdProcess) int {
+	cc := NewEtcdctl(epc.EndpointsV3(), epc.Cfg.ClientTLS, epc.Cfg.IsClientAutoTLS, epc.Cfg.EnableV2)
+
+	// ensure leader is up via linearizable get
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("WaitMembersForLeader timeout")
+		default:
+		}
+		_, err := cc.Get("0")
+		if err == nil || strings.Contains(err.Error(), "Key not found") {
+			break
+		}
+		t.Logf("WaitMembersForLeader Get err: %v", err)
+	}
+
+	leaders := make(map[uint64]struct{})
+	members := make(map[uint64]int)
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("WaitMembersForLeader timeout")
+		default:
+		}
+		for i := range membs {
+			resp, err := membs[i].Etcdctl(epc.Cfg.ClientTLS, epc.Cfg.IsClientAutoTLS, epc.Cfg.EnableV2).Status()
+			if err != nil {
+				if strings.Contains(err.Error(), "connection refused") {
+					// if member[i] has stopped
+					continue
+				} else {
+					t.Fatal(err)
+				}
+			}
+			members[resp[0].Header.MemberId] = i
+			leaders[resp[0].Leader] = struct{}{}
+		}
+		// members agree on the same leader
+		if len(leaders) == 1 {
+			break
+		}
+		leaders = make(map[uint64]struct{})
+		members = make(map[uint64]int)
+		// From main branch 10 * config.TickDuration (10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
+	}
+	for l := range leaders {
+		if index, ok := members[l]; ok {
+			t.Logf("members agree on a leader, members:%v , leader:%v", members, l)
+			return index
+		}
+		t.Fatalf("members agree on a leader which is not one of members, members:%v , leader:%v", members, l)
+	}
+	t.Fatal("impossible path of execution")
+	return -1
 }

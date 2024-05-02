@@ -1,0 +1,69 @@
+# This Dockerfile builds an image containing Mac and Linux ARM64/AMD64 versions of the etcd.
+# The resulting image is used to build the statically-linked openshift-installer binary.
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.16 AS macbuilder
+
+ENV GO_COMPLIANCE_EXCLUDE=".*"
+COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
+WORKDIR $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app
+RUN cat $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env
+RUN mkdir -p /go/src/go.etcd.io/
+RUN ln -s $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app /go/src/go.etcd.io/etcd
+WORKDIR /go/src/go.etcd.io/etcd
+COPY . .
+RUN source $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env \
+	&& export GOFLAGS='-mod=readonly' && export GO_BUILD_FLAGS='-v' \
+	&& CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 ./build.sh
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.16 AS macarmbuilder
+
+ENV GO_COMPLIANCE_EXCLUDE=".*"
+COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
+WORKDIR $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app
+RUN cat $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env
+RUN mkdir -p /go/src/go.etcd.io/
+RUN ln -s $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app /go/src/go.etcd.io/etcd
+WORKDIR /go/src/go.etcd.io/etcd
+COPY . .
+RUN source $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env \
+	&& export GOFLAGS='-mod=readonly' && export GO_BUILD_FLAGS='-v' \
+	&& CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 ./build.sh
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.16 AS linuxbuilder
+
+ENV GO_COMPLIANCE_EXCLUDE=".*"
+COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
+WORKDIR $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app
+RUN cat $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env
+RUN mkdir -p /go/src/go.etcd.io/
+RUN ln -s $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app /go/src/go.etcd.io/etcd
+WORKDIR /go/src/go.etcd.io/etcd
+COPY . .
+RUN source $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env \
+	&& export GOFLAGS='-mod=readonly' && export GO_BUILD_FLAGS='-v' \
+	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 ./build.sh
+
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.16 AS linuxarmbuilder
+
+ENV GO_COMPLIANCE_EXCLUDE=".*"
+COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
+WORKDIR $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app
+RUN cat $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env
+RUN mkdir -p /go/src/go.etcd.io/
+RUN ln -s $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app /go/src/go.etcd.io/etcd
+WORKDIR /go/src/go.etcd.io/etcd
+COPY . .
+RUN source $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env \
+	&& export GOFLAGS='-mod=readonly' && export GO_BUILD_FLAGS='-v' \
+	&& CGO_ENABLED=0 GOOS=linux GOARCH=arm64 ./build.sh
+
+# stage 2
+FROM registry.ci.openshift.org/ocp/4.16:base-rhel9
+
+COPY --from=macbuilder /go/src/go.etcd.io/etcd/bin/etcd /usr/share/openshift/darwin/amd64/etcd
+COPY --from=macarmbuilder /go/src/go.etcd.io/etcd/bin/etcd /usr/share/openshift/darwin/arm64/etcd
+COPY --from=linuxbuilder /go/src/go.etcd.io/etcd/bin/etcd /usr/share/openshift/linux/amd64/etcd
+COPY --from=linuxarmbuilder /go/src/go.etcd.io/etcd/bin/etcd /usr/share/openshift/linux/arm64/etcd
+
+# This image is not an operator, it is only used as part of the build pipeline
+LABEL io.openshift.release.operator=false

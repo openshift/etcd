@@ -25,6 +25,14 @@ WORKDIR /go/src/go.etcd.io/etcd
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GOFLAGS='-mod=readonly' GO_BUILD_FLAGS='-v' ./build.sh
 
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.16 AS builder
+ENV GO_COMPLIANCE_EXCLUDE=".*"
+WORKDIR /go/src/go.etcd.io/etcd
+COPY . .
+RUN CGO_ENABLED=0 GOFLAGS='-mod=readonly' GO_BUILD_FLAGS='-v' ./build.sh
+RUN mkdir -p /usr/share/openshift/$(go env GOOS)/$(go env GOHOSTARCH) && \
+	mv bin/etcd /usr/share/openshift/$(go env GOOS)/$(go env GOHOSTARCH)/
+
 # stage 2
 FROM registry.ci.openshift.org/ocp/4.16:base-rhel9
 
@@ -32,6 +40,7 @@ COPY --from=macbuilder /go/src/go.etcd.io/etcd/bin/etcd /usr/share/openshift/dar
 COPY --from=macarmbuilder /go/src/go.etcd.io/etcd/bin/etcd /usr/share/openshift/darwin/arm64/etcd
 COPY --from=linuxbuilder /go/src/go.etcd.io/etcd/bin/etcd /usr/share/openshift/linux/amd64/etcd
 COPY --from=linuxarmbuilder /go/src/go.etcd.io/etcd/bin/etcd /usr/share/openshift/linux/arm64/etcd
+COPY --from=builder /usr/share/openshift/ /usr/share/openshift/
 
 # This image is not an operator, it is only used as part of the build pipeline
 LABEL io.openshift.release.operator=false

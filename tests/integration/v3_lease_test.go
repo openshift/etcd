@@ -757,7 +757,7 @@ func TestV3LeaseFailover(t *testing.T) {
 
 	// send keep alive to old leader until the old leader starts
 	// to drop lease request.
-	expectedExp := time.Now().Add(5 * time.Second)
+	var expectedExp time.Time
 	for {
 		if err = lac.Send(lreq); err != nil {
 			break

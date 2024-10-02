@@ -2,8 +2,6 @@ module go.etcd.io/etcd/etcdctl/v3
 
 go 1.22
 
-toolchain go1.22.7
-
 require (
 	github.com/bgentry/speakeasy v0.1.0
 	github.com/dustin/go-humanize v1.0.0

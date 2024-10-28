@@ -95,4 +95,9 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
+	go.etcd.io/gofail v0.2.0 // indirect
+	github.com/urfave/cli v1.22.4 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
+	github.com/russross/blackfriday/v2 v2.0.1 //indirect
+	github.com/shurcooL/sanitized_anchor_name v1.0.0 //indirect
 )

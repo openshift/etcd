@@ -78,13 +78,14 @@ var (
 
 	// tls for clients connecting to proxy
 
-	grpcProxyListenCA           string
-	grpcProxyListenCert         string
-	grpcProxyListenKey          string
-	grpcProxyListenCipherSuites []string
-	grpcProxyListenAutoTLS      bool
-	grpcProxyListenCRL          string
-	selfSignedCertValidity      uint
+	grpcProxyListenCA            string
+	grpcProxyListenCert          string
+	grpcProxyListenKey           string
+	grpcProxyListenCipherSuites  []string
+	grpcProxyListenTLSMinVersion string
+	grpcProxyListenAutoTLS       bool
+	grpcProxyListenCRL           string
+	selfSignedCertValidity       uint
 
 	grpcProxyAdvertiseClientURL string
 	grpcProxyResolverPrefix     string
@@ -163,6 +164,7 @@ func newGRPCProxyStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&grpcProxyListenKey, "key-file", "", "identify secure connections to the proxy using this TLS key file")
 	cmd.Flags().StringVar(&grpcProxyListenCA, "trusted-ca-file", "", "verify certificates of TLS-enabled secure proxy using this CA bundle")
 	cmd.Flags().StringSliceVar(&grpcProxyListenCipherSuites, "listen-cipher-suites", grpcProxyListenCipherSuites, "Comma-separated list of supported TLS cipher suites between client/proxy (empty will be auto-populated by Go).")
+	cmd.Flags().StringVar(&grpcProxyListenTLSMinVersion, "listen-tls-min-version", grpcProxyListenTLSMinVersion, "Minimum TLS version supported between client/proxy. Possible values: TLS1.2, TLS1.3.")
 	cmd.Flags().BoolVar(&grpcProxyListenAutoTLS, "auto-tls", false, "proxy TLS using generated certificates")
 	cmd.Flags().StringVar(&grpcProxyListenCRL, "client-crl-file", "", "proxy client certificate revocation list file.")
 	cmd.Flags().UintVar(&selfSignedCertValidity, "self-signed-cert-validity", 1, "The validity period of the proxy certificates, unit is year")
@@ -215,6 +217,19 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 			tlsInfo = &transport.TLSInfo{}
 		}
 		tlsInfo.CipherSuites = cs
+	}
+	if len(grpcProxyListenTLSMinVersion) > 0 {
+		var tlsMinVersion uint16
+		switch grpcProxyListenTLSMinVersion {
+		case "TLS1.3":
+			tlsMinVersion = tls.VersionTLS13
+		case "TLS1.2":
+			tlsMinVersion = tls.VersionTLS12
+		}
+		if tlsInfo == nil {
+			tlsInfo = &transport.TLSInfo{}
+		}
+		tlsInfo.MinVersion = tlsMinVersion
 	}
 
 	if tlsInfo != nil {
@@ -291,6 +306,12 @@ func checkArgs() {
 	}
 	if grpcProxyListenAutoTLS && selfSignedCertValidity == 0 {
 		fmt.Fprintln(os.Stderr, fmt.Errorf("selfSignedCertValidity is invalid,it should be greater than 0"))
+		os.Exit(1)
+	}
+	switch grpcProxyListenTLSMinVersion {
+	case "TLS1.2", "TLS1.3", "":
+	default:
+		fmt.Fprintln(os.Stderr, fmt.Errorf("invalid listen-tls-min-version %q", grpcProxyListenTLSMinVersion))
 		os.Exit(1)
 	}
 }

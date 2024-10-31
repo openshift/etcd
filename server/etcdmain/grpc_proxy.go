@@ -197,13 +197,6 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 	// The empty CN is required for grpcProxyCert.
 	// Please see https://github.com/etcd-io/etcd/issues/11970#issuecomment-687875315  for more context.
 	tlsInfo := newTLS(grpcProxyListenCA, grpcProxyListenCert, grpcProxyListenKey, false)
-	if len(grpcProxyListenCipherSuites) > 0 {
-		cs, err := tlsutil.GetCipherSuites(grpcProxyListenCipherSuites)
-		if err != nil {
-			log.Fatal(err)
-		}
-		tlsInfo.CipherSuites = cs
-	}
 	if tlsInfo == nil && grpcProxyListenAutoTLS {
 		host := []string{"https://" + grpcProxyListenAddr}
 		dir := filepath.Join(grpcProxyDataDir, "fixtures", "proxy")
@@ -212,6 +205,16 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 			log.Fatal(err)
 		}
 		tlsInfo = &autoTLS
+	}
+	if len(grpcProxyListenCipherSuites) > 0 {
+		cs, err := tlsutil.GetCipherSuites(grpcProxyListenCipherSuites)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if tlsInfo == nil {
+			tlsInfo = &transport.TLSInfo{}
+		}
+		tlsInfo.CipherSuites = cs
 	}
 
 	if tlsInfo != nil {

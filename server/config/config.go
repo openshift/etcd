@@ -160,7 +160,8 @@ type ServerConfig struct {
 	// Logger logs server-side operations.
 	Logger *zap.Logger
 
-	ForceNewCluster bool
+	ForceNewCluster           bool
+	ForceNewClusterBumpAmount uint64
 
 	// LeaseCheckpointInterval time.Duration is the wait duration between lease checkpoints.
 	LeaseCheckpointInterval time.Duration

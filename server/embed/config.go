@@ -470,7 +470,8 @@ type Config struct {
 	MaxLearners int `json:"max-learners"`
 
 	// ForceNewCluster starts a new cluster even if previously started; unsafe.
-	ForceNewCluster bool `json:"force-new-cluster"`
+	ForceNewCluster           bool   `json:"force-new-cluster"`
+	ForceNewClusterBumpAmount uint64 `json:"force-new-cluster-bump-amount"`
 
 	EnablePprof           bool   `json:"enable-pprof"`
 	Metrics               string `json:"metrics"`
@@ -957,6 +958,7 @@ func (cfg *Config) AddFlags(fs *flag.FlagSet) {
 	// unsafe
 	fs.BoolVar(&cfg.UnsafeNoFsync, "unsafe-no-fsync", false, "Disables fsync, unsafe, will cause data loss.")
 	fs.BoolVar(&cfg.ForceNewCluster, "force-new-cluster", false, "Force to create a new one member cluster.")
+	fs.Uint64Var(&cfg.ForceNewClusterBumpAmount, "force-new-cluster-bump-amount", 0, "How much to increase the latest revision after --force-new-cluster.")
 
 	// featuregate
 	cfg.ServerFeatureGate.(featuregate.MutableFeatureGate).AddFlag(fs, ServerFeatureGateFlagName)

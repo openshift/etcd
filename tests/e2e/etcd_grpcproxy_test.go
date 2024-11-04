@@ -127,7 +127,7 @@ func TestGrpcProxyAutoSync(t *testing.T) {
 	require.NoError(t, proxyProc.Stop())
 }
 
-func TestGrpcProxyTLSVersions(t *testing.T) {
+func TestGrpcProxyTlsVersions(t *testing.T) {
 	e2e.SkipInShortMode(t)
 
 	epc, err := e2e.NewEtcdProcessCluster(t, e2e.NewConfigClientBoth())

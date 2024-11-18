@@ -21,6 +21,7 @@ require (
 	github.com/bgentry/speakeasy v0.1.0
 	github.com/dustin/go-humanize v1.0.0
 	github.com/spf13/cobra v1.1.3
+	github.com/spf13/pflag v1.0.5
 	go.etcd.io/bbolt v1.3.11
 	go.etcd.io/etcd/api/v3 v3.5.17
 	go.etcd.io/etcd/client/pkg/v3 v3.5.17
@@ -71,7 +72,6 @@ require (
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.46.0 // indirect
@@ -95,9 +95,4 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
-	go.etcd.io/gofail v0.2.0 // indirect
-	github.com/urfave/cli v1.22.4 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
-	github.com/russross/blackfriday/v2 v2.0.1 //indirect
-	github.com/shurcooL/sanitized_anchor_name v1.0.0 //indirect
 )

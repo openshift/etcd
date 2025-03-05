@@ -4,6 +4,8 @@ go 1.22
 
 toolchain go1.22.11
 
+replace go.etcd.io/bbolt => github.com/dusk125/bbolt v0.0.0-20250305190309-f057176c6b8b
+
 require (
 	github.com/coreos/go-semver v0.3.0
 	github.com/coreos/go-systemd/v22 v22.3.2

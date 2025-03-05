@@ -5,6 +5,7 @@ go 1.22
 toolchain go1.22.11
 
 replace (
+	go.etcd.io/bbolt => github.com/dusk125/bbolt v0.0.0-20250305190309-f057176c6b8b
 	go.etcd.io/etcd/api/v3 => ./api
 	go.etcd.io/etcd/client/pkg/v3 => ./client/pkg
 	go.etcd.io/etcd/client/v2 => ./client/v2
@@ -95,9 +96,4 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
-	go.etcd.io/gofail v0.2.0 // indirect
-	github.com/urfave/cli v1.22.4 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
-	github.com/russross/blackfriday/v2 v2.0.1 //indirect
-	github.com/shurcooL/sanitized_anchor_name v1.0.0 //indirect
 )

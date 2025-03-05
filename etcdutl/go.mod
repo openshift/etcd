@@ -5,6 +5,7 @@ go 1.23.0
 toolchain go1.23.7
 
 replace (
+	go.etcd.io/bbolt => github.com/dusk125/bbolt v0.0.0-20250305190309-f057176c6b8b
 	go.etcd.io/etcd/api/v3 => ../api
 	go.etcd.io/etcd/client/pkg/v3 => ../client/pkg
 	go.etcd.io/etcd/client/v2 => ../client/v2

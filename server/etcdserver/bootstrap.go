@@ -361,6 +361,7 @@ func bootstrapNewClusterNoWAL(cfg config.ServerConfig, prt http.RoundTripper) (*
 	}, nil
 }
 
+// TODO @Mustafa: add `DOWNSTREAM: <carry>: Try to save new cluster id to wal` logic here
 func bootstrapClusterWithWAL(cfg config.ServerConfig, meta *snapshotMetadata) (*bootstrappedCluster, error) {
 	if err := fileutil.IsDirWriteable(cfg.MemberDir()); err != nil {
 		return nil, fmt.Errorf("cannot write to member directory: %w", err)

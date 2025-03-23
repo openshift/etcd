@@ -5,7 +5,7 @@ COPY . .
 RUN GOFLAGS='-mod=readonly' GO_BUILD_FLAGS='-v' ./build.sh
 
 # stage 2 (note: any changes should reflect in Dockerfile.rhel)
-FROM registry.ci.openshift.org/ocp/4.18:base-rhel9
+FROM registry.ci.openshift.org/ocp/4.19:base-rhel9
 
 ENTRYPOINT ["/usr/bin/etcd"]
 

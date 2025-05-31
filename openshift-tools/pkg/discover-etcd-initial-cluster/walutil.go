@@ -2,21 +2,21 @@ package discover_etcd_initial_cluster
 
 import (
 	"errors"
-	"go.etcd.io/etcd/server/v3/datadir"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
 	"path/filepath"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/client/pkg/v3/types"
 	"go.etcd.io/etcd/pkg/v3/pbutil"
-	"go.etcd.io/etcd/server/v3/wal"
-	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
+	"go.etcd.io/etcd/server/v3/storage/datadir"
+	"go.etcd.io/etcd/server/v3/storage/wal"
+	"go.etcd.io/etcd/server/v3/storage/wal/walpb"
 
 	"go.uber.org/zap"
 )
 
 func readClusterIdFromWAL(lg *zap.Logger, dataDir string) (cid types.ID, err error) {
-	walDir := datadir.ToWalDir(dataDir)
+	walDir := datadir.ToWALDir(dataDir)
 	snapDir := filepath.Join(datadir.ToMemberDir(dataDir), "snap")
 
 	// Find a snapshot to start/restart a raft node

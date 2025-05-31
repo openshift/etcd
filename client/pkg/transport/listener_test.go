@@ -212,6 +212,15 @@ func TestNewListenerWithSocketOpts(t *testing.T) {
 					require.Truef(t, ok, "ln: unexpected listener type: %T, wanted *keepaliveListener", ln)
 				}
 			}
+
+			if test.scheme == "http" {
+				lnOpts := newListenOpts(test.opts...)
+				if !lnOpts.IsSocketOpts() && !lnOpts.IsTimeout() {
+					if _, ok := ln.(*keepaliveListener); !ok {
+						t.Fatalf("ln: unexpected listener type: %T, wanted *keepaliveListener", ln)
+					}
+				}
+			}
 		})
 	}
 }

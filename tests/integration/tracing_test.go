@@ -90,7 +90,7 @@ func testRPCTracing(t *testing.T, testName string, filterFunc func(*traceservice
 	srv := grpc.NewServer()
 	traceservice.RegisterTraceServiceServer(srv, &traceServer{
 		traceFound: traceFound,
-		filterFunc: containsNodeListSpan,
+		filterFunc: filterFunc,
 	})
 
 	go srv.Serve(listener)
@@ -131,8 +131,7 @@ func testRPCTracing(t *testing.T, testName string, filterFunc func(*traceservice
 	}
 
 	dialOptions := []grpc.DialOption{
-		grpc.WithUnaryInterceptor(otelgrpc.UnaryClientInterceptor(tracingOpts...)),
-		grpc.WithStreamInterceptor(otelgrpc.StreamClientInterceptor(tracingOpts...)),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler(tracingOpts...)),
 	}
 	ccfg := clientv3.Config{DialOptions: dialOptions, Endpoints: []string{cfg.AdvertiseClientUrls[0].String()}}
 	cli, err := integration.NewClient(t, ccfg)
@@ -142,21 +141,21 @@ func testRPCTracing(t *testing.T, testName string, filterFunc func(*traceservice
 	}
 	defer cli.Close()
 
-	// make a request with the instrumented client
-	resp, err := cli.Get(context.TODO(), "key")
+	// Execute the client action (either Unary or Stream RPC)
+	err = clientAction(cli)
 	require.NoError(t, err)
-	require.Empty(t, resp.Kvs)
 
 	// Wait for a span to be recorded from our request
 	select {
 	case <-traceFound:
+		t.Logf("%s trace found", testName)
 		return
 	case <-time.After(30 * time.Second):
 		t.Fatal("Timed out waiting for trace")
 	}
 }
 
-func containsNodeListSpan(req *traceservice.ExportTraceServiceRequest) bool {
+func containsUnaryRPCSpan(req *traceservice.ExportTraceServiceRequest) bool {
 	for _, resourceSpans := range req.GetResourceSpans() {
 		for _, attr := range resourceSpans.GetResource().GetAttributes() {
 			if attr.GetKey() != "service.name" && attr.GetValue().GetStringValue() != "integration-test-tracing" {
@@ -174,6 +173,20 @@ func containsNodeListSpan(req *traceservice.ExportTraceServiceRequest) bool {
 	return false
 }
 
+// containsStreamRPCSpan checks for Watch/Watch spans in trace data
+func containsStreamRPCSpan(req *traceservice.ExportTraceServiceRequest) bool {
+	for _, resourceSpans := range req.GetResourceSpans() {
+		for _, scoped := range resourceSpans.GetScopeSpans() {
+			for _, span := range scoped.GetSpans() {
+				if span.GetName() == "etcdserverpb.Watch/Watch" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // traceServer implements TracesServiceServer
 type traceServer struct {
 	traceFound chan struct{}
@@ -184,7 +197,11 @@ type traceServer struct {
 func (t *traceServer) Export(ctx context.Context, req *traceservice.ExportTraceServiceRequest) (*traceservice.ExportTraceServiceResponse, error) {
 	emptyValue := traceservice.ExportTraceServiceResponse{}
 	if t.filterFunc(req) {
-		t.traceFound <- struct{}{}
+		select {
+		case t.traceFound <- struct{}{}:
+		default:
+			// Channel already notified
+		}
 	}
 	return &emptyValue, nil
 }

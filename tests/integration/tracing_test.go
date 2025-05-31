@@ -38,6 +38,48 @@ import (
 func TestTracing(t *testing.T) {
 	testutil.SkipTestIfShortMode(t,
 		"Wal creation tests are depending on embedded etcd server so are integration-level tests.")
+
+	// Test Unary RPC tracing
+	t.Run("UnaryRPC", func(t *testing.T) {
+		testRPCTracing(t, "UnaryRPC", containsUnaryRPCSpan, func(cli *clientv3.Client) error {
+			// make a request with the instrumented client
+			resp, err := cli.Get(context.TODO(), "key")
+			require.NoError(t, err)
+			require.Empty(t, resp.Kvs)
+			return nil
+		})
+	})
+
+	// Test Stream RPC tracing
+	t.Run("StreamRPC", func(t *testing.T) {
+		testRPCTracing(t, "StreamRPC", containsStreamRPCSpan, func(cli *clientv3.Client) error {
+			// Create a context with a reasonable timeout
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			// Create a watch channel
+			watchChan := cli.Watch(ctx, "watch-key")
+
+			// Put a value to trigger the watch
+			_, err := cli.Put(context.TODO(), "watch-key", "watch-value")
+			require.NoError(t, err)
+
+			// Wait for watch event
+			select {
+			case watchResp := <-watchChan:
+				require.NoError(t, watchResp.Err())
+				require.Len(t, watchResp.Events, 1)
+				t.Log("Received watch event successfully")
+			case <-time.After(5 * time.Second):
+				t.Fatal("Timed out waiting for watch event")
+			}
+			return nil
+		})
+	})
+}
+
+// testRPCTracing is a common test function for both Unary and Stream RPC tracing
+func testRPCTracing(t *testing.T, testName string, filterFunc func(*traceservice.ExportTraceServiceRequest) bool, clientAction func(*clientv3.Client) error) {
 	// set up trace collector
 	listener, err := net.Listen("tcp", "localhost:")
 	require.NoError(t, err)

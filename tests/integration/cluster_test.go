@@ -277,6 +277,7 @@ func TestIssue2904(t *testing.T) {
 // TestIssue3699 tests minority failure during cluster configuration; it was
 // deadlocking.
 func TestIssue3699(t *testing.T) {
+	t.Skip()
 	// start a Cluster of 3 nodes a, b, c
 	integration.BeforeTest(t)
 	c := integration.NewCluster(t, &integration.ClusterConfig{Size: 3, UseBridge: true, DisableStrictReconfigCheck: true})

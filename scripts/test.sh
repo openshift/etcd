@@ -558,13 +558,11 @@ function release_pass {
     | grep --only-matching --perl-regexp "(?<=v)${binary_major}.\d.[\d]+?(?=[\^])" \
     | sort --numeric-sort --key 1.3 | tail -1 | cut -d '.' -f 2)
   fi
-  
+
   # This gets a list of all remote tags for the release branch in regex
   # Sort key is used to sort numerically by patch version
   # Latest version is then stored for use below
-  UPGRADE_VER=$(git ls-remote --tags https://github.com/etcd-io/etcd.git \
-    | grep --only-matching --perl-regexp "(?<=v)${binary_major}.${previous_minor}.[\d]+?(?=[\^])" \
-    | sort --numeric-sort --key 1.5 | tail -1 | sed 's/^/v/')
+  UPGRADE_VER="v3.6.0"
   log_callout "Found latest release: ${UPGRADE_VER}."
 
   if [ -n "${MANUAL_VER:-}" ]; then

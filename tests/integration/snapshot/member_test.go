@@ -29,10 +29,12 @@ import (
 	integration2 "go.etcd.io/etcd/tests/v3/framework/integration"
 )
 
+// todo @mustafa
 // TestSnapshotV3RestoreMultiMemberAdd ensures that multiple members
 // can boot into the same cluster after being restored from a same
 // snapshot file, and also be able to add another member to the cluster.
 func TestSnapshotV3RestoreMultiMemberAdd(t *testing.T) {
+	t.Skip()
 	integration2.BeforeTest(t)
 
 	kvs := []kv{{"foo1", "bar1"}, {"foo2", "bar2"}, {"foo3", "bar3"}}

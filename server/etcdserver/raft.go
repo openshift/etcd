@@ -574,12 +574,14 @@ func restartNode(cfg config.ServerConfig, snapshot *raftpb.Snapshot) (types.ID, 
 }
 
 func restartAsStandaloneNode(cfg config.ServerConfig, snapshot *raftpb.Snapshot, be backend.Backend) (types.ID,
-	*membership.RaftCluster, raft.Node, *raft.MemoryStorage, *wal.WAL) {
+	*membership.RaftCluster, raft.Node, *raft.MemoryStorage, *wal.WAL, uint64) {
 	var walsnap walpb.Snapshot
 	if snapshot != nil {
 		walsnap.Index, walsnap.Term = snapshot.Metadata.Index, snapshot.Metadata.Term
 	}
 	w, id, _, st, ents := readWAL(cfg.Logger, cfg.WALDir(), walsnap, cfg.UnsafeNoFsync)
+
+	walReplayEndIndex := st.Commit // Store original commit index before updating
 
 	// discard the previously uncommitted entries
 	for i, ent := range ents {
@@ -652,7 +654,7 @@ func restartAsStandaloneNode(cfg config.ServerConfig, snapshot *raftpb.Snapshot,
 
 	n := raft.RestartNode(c)
 	raftStatus = n.Status
-	return id, cl, n, s, w
+	return id, cl, n, s, w, walReplayEndIndex
 }
 
 // getIDs returns an ordered set of IDs included in the given snapshot and

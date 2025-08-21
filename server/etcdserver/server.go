@@ -107,6 +107,32 @@ const (
 	DowngradeEnabledPath = "/downgrade/enabled"
 )
 
+// WALReplayState represents the state of WAL replay during server startup
+type WALReplayState int32
+
+const (
+	// WALReplayNotStarted indicates WAL replay has not begun
+	WALReplayNotStarted WALReplayState = 0
+	// WALReplayInProgress indicates WAL replay is currently active
+	WALReplayInProgress WALReplayState = 1
+	// WALReplayCompleted indicates WAL replay has finished
+	WALReplayCompleted WALReplayState = 2
+)
+
+// String implements the Stringer interface for WALReplayState
+func (w WALReplayState) String() string {
+	switch w {
+	case WALReplayNotStarted:
+		return "not-started"
+	case WALReplayInProgress:
+		return "in-progress"
+	case WALReplayCompleted:
+		return "completed"
+	default:
+		return "unknown"
+	}
+}
+
 var (
 	// monitorVersionInterval should be smaller than the timeout
 	// on the connection. Or we will not be able to reuse the connection
@@ -297,6 +323,9 @@ type EtcdServer struct {
 
 	*AccessController
 	corruptionChecker CorruptionChecker
+
+	walReplayEndIndex uint64         // Last index from original WAL
+	replayingWAL      WALReplayState // atomic: tracks WAL replay state
 }
 
 type backendHooks struct {
@@ -409,6 +438,7 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		snapshot *raftpb.Snapshot
 	)
 
+	var walReplayEndIndex uint64
 	switch {
 	case !haveWAL && !cfg.NewCluster:
 		if err = cfg.VerifyJoinExisting(); err != nil {
@@ -540,7 +570,7 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		if !cfg.ForceNewCluster {
 			id, cl, n, s, w = restartNode(cfg, snapshot)
 		} else {
-			id, cl, n, s, w = restartAsStandaloneNode(cfg, snapshot, be)
+			id, cl, n, s, w, walReplayEndIndex = restartAsStandaloneNode(cfg, snapshot, be)
 		}
 
 		cl.SetStore(st)
@@ -598,6 +628,8 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		AccessController:   &AccessController{CORS: cfg.CORS, HostWhitelist: cfg.HostWhitelist},
 		consistIndex:       ci,
 		firstCommitInTermC: make(chan struct{}),
+		walReplayEndIndex:  walReplayEndIndex,
+		replayingWAL:       WALReplayInProgress,
 	}
 	serverID.With(prometheus.Labels{"server_id": id.String()}).Set(1)
 
@@ -2231,12 +2263,20 @@ func (s *EtcdServer) apply(
 	confState *raftpb.ConfState,
 ) (appliedt uint64, appliedi uint64, shouldStop bool) {
 	s.lg.Debug("Applying entries", zap.Int("num-entries", len(es)))
+
 	for i := range es {
 		e := es[i]
 		s.lg.Debug("Applying entry",
 			zap.Uint64("index", e.Index),
 			zap.Uint64("term", e.Term),
 			zap.Stringer("type", e.Type))
+
+		currentReplayState := WALReplayState(atomic.LoadInt32((*int32)(&s.replayingWAL)))
+		if currentReplayState == WALReplayInProgress && e.Index > s.walReplayEndIndex {
+			atomic.StoreInt32((*int32)(&s.replayingWAL), int32(WALReplayCompleted))
+			s.lg.Info("WAL replay completed, resuming normal operations")
+		}
+
 		switch e.Type {
 		case raftpb.EntryNormal:
 			// gofail: var beforeApplyOneEntryNormal struct{}
@@ -2387,6 +2427,31 @@ func (s *EtcdServer) notifyAboutFirstCommitInTerm() {
 // invoked with a ConfChange that has already passed through Raft
 func (s *EtcdServer) applyConfChange(cc raftpb.ConfChange, confState *raftpb.ConfState, shouldApplyV3 membership.ShouldApplyV3) (bool, error) {
 	lg := s.Logger()
+
+	walReplay := WALReplayState(atomic.LoadInt32((*int32)(&s.replayingWAL)))
+	id := types.ID(cc.NodeID)
+	// If force-new-cluster is set, during WAL reply do not apply self remove or self add events
+	if s.Cfg.ForceNewCluster && id == s.id && walReplay == WALReplayInProgress {
+		switch cc.Type {
+		case raftpb.ConfChangeRemoveNode:
+			lg.Info(
+				"self-remove event during WAL replay",
+				zap.String("local-member-id", s.id.String()),
+				zap.String("to-be-removed-member-id", id.String()),
+				zap.Stringer("WAL replay", walReplay),
+			)
+			//return true, nil
+		case raftpb.ConfChangeAddNode:
+			lg.Info(
+				"self-add event during WAL replay",
+				zap.String("local-member-id", s.id.String()),
+				zap.String("to-be-added-member-id", id.String()),
+				zap.Stringer("WAL replay", walReplay),
+			)
+			//return false, nil
+		}
+	}
+
 	if err := s.cluster.ValidateConfigurationChange(cc); err != nil {
 		lg.Error("Validation on configuration change failed", zap.Bool("shouldApplyV3", bool(shouldApplyV3)), zap.Error(err))
 		cc.NodeID = raft.None

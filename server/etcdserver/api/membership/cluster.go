@@ -478,6 +478,10 @@ func (c *RaftCluster) RemoveMember(id types.ID, shouldApplyV3 ShouldApplyV3) {
 			zap.Strings("removed-remote-peer-urls", m.PeerURLs),
 			zap.Bool("removed-remote-peer-is-learner", m.IsLearner),
 		)
+		c.lg.Info(
+			"logging the Member map",
+			zap.Any("members", c.members),
+		)
 	} else {
 		c.lg.Warn(
 			"skipped removing already removed member",

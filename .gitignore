@@ -35,3 +35,15 @@ hack/tls-setup/certs
 /tools/benchmark/benchmark
 /out
 /etcd-dump-logs
+
+_output
+etcd-tests-ext
+etcd-tests-ext.gz
+
+# Test output files
+junit.xml
+report.json
+test-results/
+
+# OpenShift Tests Extension metadata
+.openshift-tests-extension/openshift_payload_*.json

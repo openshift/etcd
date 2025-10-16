@@ -16,8 +16,19 @@ hack/tls-setup/certs
 .idea
 /contrib/raftexample/raftexample
 /contrib/raftexample/raftexample-*
-/vendor
 /tests/e2e/default.proxy
+/vendor
 *.tmp
 *.bak
 .gobincache/
+_output
+etcd-tests-ext
+etcd-tests-ext.gz
+
+# Test output files
+junit.xml
+report.json
+test-results/
+
+# OpenShift Tests Extension metadata
+.openshift-tests-extension/openshift_payload_*.json

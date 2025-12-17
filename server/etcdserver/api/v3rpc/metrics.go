@@ -52,6 +52,51 @@ var (
 		},
 		[]string{"type", "client_api_version"},
 	)
+
+	watchSendLoopWatchStreamTime = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "etcd_debugging",
+			Subsystem: "server",
+			Name:      "watch_send_loop_watch_stream_time_seconds",
+			Help:      "The total duration in seconds of running through the send loop watch stream response all events.",
+		},
+	)
+
+	watchSendLoopWatchStreamTimePerEvent = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "etcd_debugging",
+			Subsystem: "server",
+			Name:      "watch_send_loop_watch_stream_time_per_event_seconds",
+			Help:      "The average duration in seconds of running through the send loop watch stream response, per event.",
+			// lowest bucket start of upper bound 0.0001 sec (0.1 ms) with factor 2
+			// highest bucket start of 0.0001 sec * 2^15 == 3.2768 sec
+			Buckets: prometheus.ExponentialBuckets(0.0001, 2, 16),
+		},
+	)
+
+	watchSendLoopControlStreamTime = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "etcd_debugging",
+			Subsystem: "server",
+			Name:      "watch_send_loop_control_stream_time_seconds",
+			Help:      "The total duration in seconds of running through the send loop control stream response.",
+			// lowest bucket start of upper bound 0.0001 sec (0.1 ms) with factor 2
+			// highest bucket start of 0.0001 sec * 2^15 == 3.2768 sec
+			Buckets: prometheus.ExponentialBuckets(0.0001, 2, 16),
+		},
+	)
+
+	watchSendLoopProgressTime = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Namespace: "etcd_debugging",
+			Subsystem: "server",
+			Name:      "watch_send_loop_progress_time_seconds",
+			Help:      "The total duration in seconds of running through the progress loop control stream response.",
+			// lowest bucket start of upper bound 0.0001 sec (0.1 ms) with factor 2
+			// highest bucket start of 0.0001 sec * 2^15 == 3.2768 sec
+			Buckets: prometheus.ExponentialBuckets(0.0001, 2, 16),
+		},
+	)
 )
 
 func init() {
@@ -59,4 +104,8 @@ func init() {
 	prometheus.MustRegister(receivedBytes)
 	prometheus.MustRegister(streamFailures)
 	prometheus.MustRegister(clientRequests)
+	prometheus.MustRegister(watchSendLoopWatchStreamTime)
+	prometheus.MustRegister(watchSendLoopWatchStreamTimePerEvent)
+	prometheus.MustRegister(watchSendLoopControlStreamTime)
+	prometheus.MustRegister(watchSendLoopProgressTime)
 }

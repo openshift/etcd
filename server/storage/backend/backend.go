@@ -18,8 +18,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -469,54 +467,6 @@ func (b *backend) defrag() error {
 	isDefragActive.Set(1)
 	defer isDefragActive.Set(0)
 
-	// TODO: make this non-blocking?
-	// lock batchTx to ensure nobody is using previous tx, and then
-	// close previous ongoing tx.
-	b.batchTx.LockOutsideApply()
-	defer b.batchTx.Unlock()
-
-	// lock database after lock tx to avoid deadlock.
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	// block concurrent read requests while resetting tx
-	b.readTx.Lock()
-	defer b.readTx.Unlock()
-
-	// Create a temporary file to ensure we start with a clean slate.
-	// Snapshotter.cleanupSnapdir cleans up any of these that are found during startup.
-	dir := filepath.Dir(b.db.Path())
-	temp, err := os.CreateTemp(dir, "db.tmp.*")
-	if err != nil {
-		return err
-	}
-
-	options := bolt.Options{}
-	if boltOpenOptions != nil {
-		options = *boltOpenOptions
-	}
-	options.OpenFile = func(_ string, _ int, _ os.FileMode) (file *os.File, err error) {
-		// gofail: var defragOpenFileError string
-		// return nil, fmt.Errorf(defragOpenFileError)
-		return temp, nil
-	}
-	// Don't load tmp db into memory regardless of opening options
-	options.Mlock = false
-	tdbp := temp.Name()
-	tmpdb, err := bolt.Open(tdbp, 0o600, &options)
-	if err != nil {
-		temp.Close()
-		if rmErr := os.Remove(temp.Name()); rmErr != nil {
-			b.lg.Error(
-				"failed to remove temporary file",
-				zap.String("path", temp.Name()),
-				zap.Error(rmErr),
-			)
-		}
-
-		return err
-	}
-
 	dbp := b.db.Path()
 	size1, sizeInUse1 := b.Size(), b.SizeInUse()
 	b.lg.Info(
@@ -542,43 +492,17 @@ func (b *backend) defrag() error {
 	b.batchTx.unsafeCommit(true)
 	b.batchTx.tx = nil
 
-	// gofail: var defragBeforeCopy struct{}
-	err = defragdb(b.db, tmpdb, defragLimit)
+	swapped, err := bolt.CompactAndSwap(b.db, 10000)
 	if err != nil {
-		tmpdb.Close()
-		if rmErr := os.RemoveAll(tmpdb.Path()); rmErr != nil {
-			b.lg.Error("failed to remove db.tmp after defragmentation completed", zap.Error(rmErr))
-		}
-
-		// restore the bbolt transactions if defragmentation fails
-		b.batchTx.tx = b.unsafeBegin(true)
-		b.readTx.tx = b.unsafeBegin(false)
-
 		return err
 	}
 
-	err = b.db.Close()
-	if err != nil {
-		b.lg.Fatal("failed to close database", zap.Error(err))
-	}
-	err = tmpdb.Close()
-	if err != nil {
-		b.lg.Fatal("failed to close tmp database", zap.Error(err))
-	}
-	// gofail: var defragBeforeRename struct{}
-	err = os.Rename(tdbp, dbp)
-	if err != nil {
-		b.lg.Fatal("failed to rename tmp database", zap.Error(err))
-	}
-
-	b.db, err = bolt.Open(dbp, 0o600, b.bopts)
-	if err != nil {
-		b.lg.Fatal("failed to open database", zap.String("path", dbp), zap.Error(err))
-	}
+	b.mu.Lock()
+	b.db = swapped
 	b.batchTx.tx = b.unsafeBegin(true)
-
 	b.readTx.reset()
 	b.readTx.tx = b.unsafeBegin(false)
+	b.mu.Unlock()
 
 	size := b.readTx.tx.Size()
 	db := b.readTx.tx.DB()
@@ -601,68 +525,6 @@ func (b *backend) defrag() error {
 		zap.Duration("took", took),
 	)
 	return nil
-}
-
-func defragdb(odb, tmpdb *bolt.DB, limit int) error {
-	// gofail: var defragdbFail string
-	// return fmt.Errorf(defragdbFail)
-
-	// open a tx on tmpdb for writes
-	tmptx, err := tmpdb.Begin(true)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			tmptx.Rollback()
-		}
-	}()
-
-	// open a tx on old db for read
-	tx, err := odb.Begin(false)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	c := tx.Cursor()
-
-	count := 0
-	for next, _ := c.First(); next != nil; next, _ = c.Next() {
-		b := tx.Bucket(next)
-		if b == nil {
-			return fmt.Errorf("backend: cannot defrag bucket %s", next)
-		}
-
-		tmpb, berr := tmptx.CreateBucketIfNotExists(next)
-		if berr != nil {
-			return berr
-		}
-		tmpb.FillPercent = 0.9 // for bucket2seq write in for each
-
-		if err = b.ForEach(func(k, v []byte) error {
-			count++
-			if count > limit {
-				err = tmptx.Commit()
-				if err != nil {
-					return err
-				}
-				tmptx, err = tmpdb.Begin(true)
-				if err != nil {
-					return err
-				}
-				tmpb = tmptx.Bucket(next)
-				tmpb.FillPercent = 0.9 // for bucket2seq write in for each
-
-				count = 0
-			}
-			return tmpb.Put(k, v)
-		}); err != nil {
-			return err
-		}
-	}
-
-	return tmptx.Commit()
 }
 
 func (b *backend) begin(write bool) *bolt.Tx {

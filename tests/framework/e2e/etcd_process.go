@@ -41,6 +41,9 @@ var (
 	BinPathLastRelease   string
 	CtlBinPath           string
 	UtlBinPath           string
+
+	CtlBinPathLastRelease  string
+	CtlBinPathV3439Release string
 )
 
 // EtcdProcess is a process that serves etcd requests.
@@ -94,6 +97,8 @@ type EtcdServerProcessConfig struct {
 
 	DataDirPath string
 	KeepDataDir bool
+
+	DedicatedWALDirPath string
 
 	Name string
 

@@ -198,6 +198,8 @@ func newBackend(bcfg BackendConfig) *backend {
 	bopts.NoSync = bcfg.UnsafeNoFsync
 	bopts.NoGrowSync = bcfg.UnsafeNoFsync
 	bopts.Mlock = bcfg.Mlock
+	// hardcode for testing purposes
+	bopts.Compression = true
 	bopts.Logger = newBoltLoggerZap(bcfg)
 
 	db, err := bolt.Open(bcfg.Path, 0o600, bopts)
@@ -502,6 +504,8 @@ func (b *backend) defrag() error {
 	}
 	// Don't load tmp db into memory regardless of opening options
 	options.Mlock = false
+	// hardcode for testing purposes
+	options.Compression = true
 	tdbp := temp.Name()
 	tmpdb, err := bolt.Open(tdbp, 0o600, &options)
 	if err != nil {

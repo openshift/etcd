@@ -65,7 +65,7 @@ func TestKVPutError(t *testing.T) {
 	require.NoError(t, err) // below quota
 
 	time.Sleep(1 * time.Second) // give enough time for commit
-
+	// TODO lol compression
 	_, err = kv.Put(ctx, "foo2", strings.Repeat("a", int(maxReqBytes-50)))
 	if !errors.Is(err, rpctypes.ErrNoSpace) { // over quota
 		t.Fatalf("expected %v, got %v", rpctypes.ErrNoSpace, err)

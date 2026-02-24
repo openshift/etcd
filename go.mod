@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.7
 
 replace (
-	go.etcd.io/bbolt => github.com/tjungblu/bbolt v0.0.0-20260212133216-4374f29e000c
+	go.etcd.io/bbolt => github.com/tjungblu/bbolt v0.0.0-20260224112617-43b574201fe5
 	go.etcd.io/etcd/api/v3 => ./api
 	go.etcd.io/etcd/client/pkg/v3 => ./client/pkg
 	go.etcd.io/etcd/client/v3 => ./client/v3

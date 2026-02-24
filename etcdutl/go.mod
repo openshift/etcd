@@ -15,7 +15,7 @@ replace (
 // Bad imports are sometimes causing attempts to pull that code.
 // This makes the error more explicit.
 replace (
-	go.etcd.io/bbolt => github.com/tjungblu/bbolt v0.0.0-20260212133216-4374f29e000c
+	go.etcd.io/bbolt => github.com/tjungblu/bbolt v0.0.0-20260224112617-43b574201fe5
 
 	go.etcd.io/etcd => ./FORBIDDEN_DEPENDENCY
 	go.etcd.io/etcd/v3 => ./FORBIDDEN_DEPENDENCY

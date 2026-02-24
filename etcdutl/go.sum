@@ -93,8 +93,8 @@ github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/tjungblu/bbolt v0.0.0-20260212133216-4374f29e000c h1:/tB84fODSV0OnKKMGPHDQg9yUPeATq00TBovQ8/wDU0=
-github.com/tjungblu/bbolt v0.0.0-20260212133216-4374f29e000c/go.mod h1:ZxJP9L6XEWtFU07VniIqr0cNAg1b3gyaiSjyuPix704=
+github.com/tjungblu/bbolt v0.0.0-20260224112617-43b574201fe5 h1:BhBe34a6weX3b4wjpwTWTt+DUcL9O7jKDmG72CENWNk=
+github.com/tjungblu/bbolt v0.0.0-20260224112617-43b574201fe5/go.mod h1:ZxJP9L6XEWtFU07VniIqr0cNAg1b3gyaiSjyuPix704=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 h1:uruHq4dN7GR16kFc5fp3d1RIYzJW5onx8Ybykw2YQFA=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
 github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 h1:eY9dn8+vbi4tKz5Qo6v2eYzo7kUS51QINcR5jNpbZS8=

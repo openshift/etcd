@@ -345,6 +345,8 @@ Experimental feature:
 Unsafe feature:
   --force-new-cluster 'false'
     Force to create a new one-member cluster.
+  --force-new-cluster-bump-amount '0'
+    How much to increase the latest revision after --force-new-cluster.
   --unsafe-no-fsync 'false'
     Disables fsync, unsafe, will cause data loss.
 

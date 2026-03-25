@@ -39,7 +39,7 @@ import (
 	"go.etcd.io/etcd/client/pkg/v3/types"
 	"go.etcd.io/etcd/client/v2"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/pkg/v3/grpc_testing"
+	"go.etcd.io/etcd/pkg/v3/grpctesting"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/server/v3/config"
 	"go.etcd.io/etcd/server/v3/embed"
@@ -47,7 +47,6 @@ import (
 	"go.etcd.io/etcd/server/v3/etcdserver/api/etcdhttp"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/membership"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/rafthttp"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/v2http"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3client"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3election"
 	epb "go.etcd.io/etcd/server/v3/etcdserver/api/v3election/v3electionpb"
@@ -614,7 +613,7 @@ type member struct {
 	isLearner bool
 	closed    bool
 
-	grpcServerRecorder *grpc_testing.GrpcRecorder
+	grpcServerRecorder *grpctesting.GRPCRecorder
 }
 
 func (m *member) GRPCURL() string { return m.grpcURL }
@@ -764,7 +763,7 @@ func mustNewMember(t testutil.TB, mcfg memberConfig) *member {
 		m.ExperimentalMaxLearners = mcfg.ExperimentalMaxLearners
 	}
 	m.V2Deprecation = config.V2_DEPR_DEFAULT
-	m.grpcServerRecorder = &grpc_testing.GrpcRecorder{}
+	m.grpcServerRecorder = &grpctesting.GRPCRecorder{}
 	m.Logger = memberLogger(t, mcfg.name)
 	t.Cleanup(func() {
 		// if we didn't cleanup the logger, the consecutive test
@@ -1039,14 +1038,15 @@ func (m *member) Launch() error {
 		m.serverClosers = append(m.serverClosers, closer)
 	}
 	for _, ln := range m.ClientListeners {
+		handler := http.NewServeMux()
+		etcdhttp.HandleDebug(handler)
+		etcdhttp.HandleVersion(handler, m.s)
+		etcdhttp.HandleMetrics(handler)
+		etcdhttp.HandleHealth(m.Logger, handler, m.s)
 		hs := &httptest.Server{
 			Listener: ln,
 			Config: &http.Server{
-				Handler: v2http.NewClientHandler(
-					m.Logger,
-					m.s,
-					m.ServerConfig.ReqTimeout(),
-				),
+				Handler:  handler,
 				ErrorLog: log.New(ioutil.Discard, "net/http", 0),
 			},
 		}
@@ -1112,7 +1112,7 @@ func (m *member) Launch() error {
 	return nil
 }
 
-func (m *member) RecordedRequests() []grpc_testing.RequestInfo {
+func (m *member) RecordedRequests() []grpctesting.RequestInfo {
 	return m.grpcServerRecorder.RecordedRequests()
 }
 

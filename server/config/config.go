@@ -218,7 +218,7 @@ type ServerConfig struct {
 
 	// Metrics types of metrics - should be either 'basic' or 'extensive'
 	Metrics string
-
+	
 	// openshiftHardwareDelaySeconds sets the duration, in seconds, to extend the standard etcd
 	// request timeout by based on hardware speed. OpenShift currently has a notion of differentiating
 	// between standard and slower hardware: https://github.com/openshift/cluster-etcd-operator/blob/5bbe49442101475febb89bba3be808aa121f5c0c/pkg/hwspeedhelpers/hwhelper.go#L21-L33

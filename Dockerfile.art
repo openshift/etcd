@@ -1,13 +1,15 @@
 FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.25-openshift-4.22 AS builder
 
-WORKDIR /go/src/go.etcd.io/etcd
+COPY $REMOTE_SOURCES $REMOTE_SOURCES_DIR
+WORKDIR $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app
+RUN ls -lR $REMOTE_SOURCES_DIR
+RUN cat $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env
+RUN source $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/cachito.env && GOFLAGS='-mod=readonly' GO_BUILD_FLAGS='-v' ./build.sh
 
+RUN mkdir -p /go/src/go.etcd.io/
+RUN ln -s $REMOTE_SOURCES_DIR/cachito-gomod-with-deps/app /go/src/go.etcd.io/etcd
 
-COPY . .
-
-RUN GOFLAGS='-mod=readonly' GO_BUILD_FLAGS='-v' ./build.sh
-
-# stage 2 (note: any changes should reflect in Dockerfile.art)
+# stage 2 (note: any changes should reflect in Dockerfile.rhel)
 FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
 
 ENTRYPOINT ["/usr/bin/etcd"]

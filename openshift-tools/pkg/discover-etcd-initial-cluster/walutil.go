@@ -2,10 +2,9 @@ package discover_etcd_initial_cluster
 
 import (
 	"errors"
-	"path/filepath"
-
-	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
 	"go.etcd.io/etcd/server/v3/storage/datadir"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
+	"path/filepath"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/client/pkg/v3/types"

@@ -127,13 +127,14 @@ These files are downstream-only and don't exist in upstream etcd:
 - `client/v3/patch_cluster.go` - Downstream client patch (NonLinearizeableMemberList)
 - `server/revbump/` - Downstream revision bumping for force-new-cluster
 - `server/config/config.go` - Has downstream additions (OPENSHIFT_ETCD_HARDWARE_DELAY_TIMEOUT)
-- `tests/integration/cluster.go` - Downstream test cluster helper (references upstream internal APIs that change between versions)
 - `REBASE.openshift.md` - Additional rebase documentation
+
+**Removed files (do not re-add):**
+- `tests/integration/cluster.go` - Removed during v3.6.9 rebase. Was a stale carry from v3.5 that duplicated `tests/framework/integration/cluster.go` and could not compile (referenced many removed upstream symbols). The `tests/integration/` package works without it — `lazy_cluster.go` and test files import from `tests/framework/integration` for the actual cluster implementation. If this file reappears in future carries, remove it again.
 
 ## Known Fragile Downstream Files
 
 These files reference upstream internal APIs and are most likely to break during a rebase:
 
-- `tests/integration/cluster.go` - Large downstream carry that mirrors `tests/framework/integration/cluster.go`. When imports break, check the upstream framework version for the current API.
 - `client/v3/patch_cluster.go` - Uses internal client functions that may be renamed upstream.
 - `openshift-tools/pkg/discover-etcd-initial-cluster/walutil.go` - Imports server-internal packages (wal, datadir, snap) that move during upstream refactors.

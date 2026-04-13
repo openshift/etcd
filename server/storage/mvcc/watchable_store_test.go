@@ -313,7 +313,7 @@ func TestSyncWatchers(t *testing.T) {
 
 	assert.Empty(t, s.synced.watcherSetByKey(string(testKey)))
 	assert.Len(t, s.unsynced.watcherSetByKey(string(testKey)), watcherN)
-	s.syncWatchers([]mvccpb.Event{})
+	s.syncWatchers()
 	assert.Len(t, s.synced.watcherSetByKey(string(testKey)), watcherN)
 	assert.Empty(t, s.unsynced.watcherSetByKey(string(testKey)))
 
@@ -405,13 +405,14 @@ func TestRangeEvents(t *testing.T) {
 		expectEvents []mvccpb.Event
 	}{
 		// maxRev, top to bottom
-		{minRev: 2, maxRev: 6, expectEvents: expectEvents[0:5]},
-		{minRev: 2, maxRev: 5, expectEvents: expectEvents[0:3]},
-		{minRev: 2, maxRev: 4, expectEvents: expectEvents[0:2]},
-		{minRev: 2, maxRev: 3, expectEvents: expectEvents[0:1]},
-		{minRev: 2, maxRev: 2, expectEvents: expectEvents[0:0]},
+		{minRev: -1, maxRev: 6, expectEvents: expectEvents[0:5]},
+		{minRev: -1, maxRev: 5, expectEvents: expectEvents[0:3]},
+		{minRev: -1, maxRev: 4, expectEvents: expectEvents[0:2]},
+		{minRev: -1, maxRev: 3, expectEvents: expectEvents[0:1]},
+		{minRev: -1, maxRev: 2, expectEvents: expectEvents[0:0]},
 
 		// minRev, bottom to top
+		{minRev: -1, maxRev: 6, expectEvents: expectEvents[0:5]},
 		{minRev: 2, maxRev: 6, expectEvents: expectEvents[0:5]},
 		{minRev: 3, maxRev: 6, expectEvents: expectEvents[1:5]},
 		{minRev: 4, maxRev: 6, expectEvents: expectEvents[2:5]},
@@ -429,15 +430,17 @@ func TestRangeEvents(t *testing.T) {
 		{minRev: 5, maxRev: 6, expectEvents: expectEvents[3:5]},
 		{minRev: 6, maxRev: 6, expectEvents: expectEvents[5:5]},
 	}
-	// reuse the evs to test rangeEventsWithReuse
-	var evs []mvccpb.Event
 	for i, tc := range tcs {
 		t.Run(fmt.Sprintf("%d rangeEvents(%d, %d)", i, tc.minRev, tc.maxRev), func(t *testing.T) {
-			assert.ElementsMatch(t, tc.expectEvents, rangeEvents(lg, b, tc.minRev, tc.maxRev))
-			evs = rangeEventsWithReuse(lg, b, evs, tc.minRev, tc.maxRev)
-			assert.ElementsMatch(t, tc.expectEvents, evs)
+			assert.ElementsMatch(t, tc.expectEvents, rangeEvents(lg, b, tc.minRev, tc.maxRev, fakeContains{}))
 		})
 	}
+}
+
+type fakeContains struct{}
+
+func (f fakeContains) contains(string) bool {
+	return true
 }
 
 // TestWatchCompacted tests a watcher that watches on a compacted revision.
@@ -514,7 +517,7 @@ func TestWatchNoEventLossOnCompact(t *testing.T) {
 	// fill up w.Chan() with 1 buf via 2 compacted watch response
 	sImpl, ok := s.(*watchableStore)
 	require.Truef(t, ok, "TestWatchNoEventLossOnCompact: needs a WatchableKV implementation")
-	sImpl.syncWatchers([]mvccpb.Event{})
+	sImpl.syncWatchers()
 
 	for len(watchers) > 0 {
 		resp := <-w.Chan()

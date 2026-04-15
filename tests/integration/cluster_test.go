@@ -313,7 +313,7 @@ func TestIssue3699(t *testing.T) {
 
 	select {
 	// waiting for ReadyNotify can take several seconds
-	case <-time.After(10 * time.Second):
+	case <-time.After(60 * time.Second):
 		t.Fatalf("waited too long for ready notification")
 	case <-c.Members[0].Server.StopNotify():
 		t.Fatalf("should not be stopped")

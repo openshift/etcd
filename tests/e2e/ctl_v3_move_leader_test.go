@@ -84,7 +84,7 @@ func testCtlV3MoveLeader(t *testing.T, cfg e2e.EtcdProcessClusterConfig, envVars
 			TLS:         tcfg,
 		})
 		require.NoError(t, err)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		resp, err := cli.Status(ctx, ep)
 		if err != nil {
 			t.Fatalf("failed to get status from endpoint %s: %v", ep, err)

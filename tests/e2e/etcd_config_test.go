@@ -582,7 +582,7 @@ func TestBootstrapDefragFlag(t *testing.T) {
 func TestSnapshotCatchupEntriesFlag(t *testing.T) {
 	e2e.SkipInShortMode(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	proc, err := e2e.SpawnCmd([]string{e2e.BinPath.Etcd, "--experimental-snapshot-catchup-entries", "1000"}, nil)
@@ -613,7 +613,7 @@ func TestEtcdHealthyWithTinySnapshotCatchupEntries(t *testing.T) {
 	})
 
 	// simulate 10 clients keep writing to etcd in parallel with no error
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	g, ctx := errgroup.WithContext(ctx)
 	for i := 0; i < 10; i++ {

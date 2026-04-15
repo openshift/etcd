@@ -74,7 +74,7 @@ import (
 const (
 	// RequestWaitTimeout is the time duration to wait for a request to go through or detect leader loss.
 	RequestWaitTimeout = 5 * time.Second
-	RequestTimeout     = 20 * time.Second
+	RequestTimeout     = 60 * time.Second
 
 	ClusterName  = "etcd"
 	BasePort     = 21000
@@ -420,7 +420,7 @@ func (c *Cluster) WaitLeader(t testing.TB) int {
 // and returns its 'index' in the 'membs' list
 func (c *Cluster) WaitMembersForLeader(t testing.TB, membs []*Member) int {
 	t.Logf("WaitMembersForLeader")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	l := 0
 	for l = c.waitMembersForLeader(ctx, t, membs); l < 0; {

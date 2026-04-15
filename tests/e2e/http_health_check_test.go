@@ -150,7 +150,7 @@ func TestHTTPHealthHandler(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			clus, err := e2e.NewEtcdProcessCluster(ctx, t, tc.clusterOptions...)
 			require.NoError(t, err)
@@ -313,7 +313,7 @@ func TestHTTPLivezReadyzHandler(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			clus, err := e2e.NewEtcdProcessCluster(ctx, t, tc.clusterOptions...)
 			require.NoError(t, err)

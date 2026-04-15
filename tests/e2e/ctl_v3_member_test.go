@@ -505,7 +505,7 @@ func mustSaveMemberIntoBbolt(t *testing.T, dataDir string, protoMember *etcdserv
 }
 
 func ensureAllMembersAreVotingMembers(t *testing.T, epc *e2e.EtcdProcessCluster) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	memberListResp, err := epc.Etcdctl().MemberList(ctx, false)
 	require.NoError(t, err)

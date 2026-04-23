@@ -74,7 +74,7 @@ import (
 const (
 	// RequestWaitTimeout is the time duration to wait for a request to go through or detect leader loss.
 	RequestWaitTimeout = 5 * time.Second
-	RequestTimeout     = 20 * time.Second
+	RequestTimeout     = 30 * time.Second
 
 	ClusterName  = "etcd"
 	BasePort     = 21000

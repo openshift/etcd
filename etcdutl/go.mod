@@ -5,6 +5,7 @@ go 1.25.0
 toolchain go1.25.8
 
 replace (
+	go.etcd.io/bbolt => github.com/tjungblu/bbolt v0.0.0-20260320132826-bcdd1cee7c9f
 	go.etcd.io/etcd/api/v3 => ../api
 	go.etcd.io/etcd/client/pkg/v3 => ../client/pkg
 	go.etcd.io/etcd/client/v3 => ../client/v3
@@ -56,7 +57,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
-	github.com/klauspost/compress v1.17.9 // indirect
+	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

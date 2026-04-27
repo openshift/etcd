@@ -502,6 +502,8 @@ func (b *backend) defrag() error {
 	}
 	// Don't load tmp db into memory regardless of opening options
 	options.Mlock = false
+	// hardcode for testing purposes
+	options.Compression = true
 	tdbp := temp.Name()
 	tmpdb, err := bolt.Open(tdbp, 0o600, &options)
 	if err != nil {

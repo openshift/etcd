@@ -17,8 +17,10 @@ package config
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,7 +154,8 @@ type ServerConfig struct {
 	// Logger logs server-side operations.
 	Logger *zap.Logger
 
-	ForceNewCluster bool
+	ForceNewCluster           bool
+	ForceNewClusterBumpAmount uint64
 
 	// EnableLeaseCheckpoint enables leader to send regular checkpoints to other members to prevent reset of remaining TTL on leader change.
 	EnableLeaseCheckpoint bool
@@ -195,8 +198,16 @@ type ServerConfig struct {
 	// consider running defrag during bootstrap. Needs to be set to non-zero value to take effect.
 	ExperimentalBootstrapDefragThresholdMegabytes uint `json:"experimental-bootstrap-defrag-threshold-megabytes"`
 
+	// ExperimentalMaxLearners sets a limit to the number of learner members that can exist in the cluster membership.
+	ExperimentalMaxLearners int `json:"experimental-max-learners"`
+
 	// V2Deprecation defines a phase of v2store deprecation process.
 	V2Deprecation V2DeprecationEnum `json:"v2-deprecation"`
+
+	// openshiftHardwareDelaySeconds sets the duration, in seconds, to extend the standard etcd
+	// request timeout by based on hardware speed. OpenShift currently has a notion of differentiating
+	// between standard and slower hardware: https://github.com/openshift/cluster-etcd-operator/blob/5bbe49442101475febb89bba3be808aa121f5c0c/pkg/hwspeedhelpers/hwhelper.go#L21-L33
+	openshiftHardwareDelaySeconds int
 }
 
 // VerifyBootstrap sanity-checks the initial config for bootstrap case
@@ -311,7 +322,31 @@ func (c *ServerConfig) ShouldDiscover() bool { return c.DiscoveryURL != "" }
 func (c *ServerConfig) ReqTimeout() time.Duration {
 	// 5s for queue waiting, computation and disk IO delay
 	// + 2 * election timeout for possible leader election
-	return 5*time.Second + 2*time.Duration(c.ElectionTicks*int(c.TickMs))*time.Millisecond
+	// return 5*time.Second + 2*time.Duration(c.ElectionTicks*int(c.TickMs))*time.Millisecond
+
+	// OCP PATCH: use an environment variable to configure the non election-related timeout
+	// value used. If it isn't configured, default to 25 seconds.
+	// Default of 25 seconds gets us to a total of 27s on "standard hardware" and 30s on "slow hardware"
+	// due to the configurations of election timeouts in https://github.com/openshift/cluster-etcd-operator/blob/5bbe49442101475febb89bba3be808aa121f5c0c/pkg/hwspeedhelpers/hwhelper.go#L21-L33
+	// This gets us closer to the kube-apiserver's upper bound request timeout of 34 seconds while leaving some time
+	// for other things to have on the kube-apiserver side of things.
+	// See: https://issues.redhat.com/browse/OCPBUGS-50510
+	// TODO(everettraven): pursue an upstream fix for this so we don't have to carry this patch for forever
+	if c.openshiftHardwareDelaySeconds == 0 {
+		hardwareDelayTimeout := 25
+		if hardwareDelayOverrideEnv := os.Getenv("OPENSHIFT_ETCD_HARDWARE_DELAY_TIMEOUT"); hardwareDelayOverrideEnv != "" {
+			hardwareDelayOverride, err := strconv.Atoi(hardwareDelayOverrideEnv)
+			if err != nil {
+				c.Logger.Sugar().Infof("OPENSHIFT_ETCD_HARDWARE_DELAY_TIMEOUT specified but could not be parsed. falling back to default of %s seconds. parse error: %v", hardwareDelayTimeout, err)
+			} else {
+				hardwareDelayTimeout = hardwareDelayOverride
+			}
+		}
+
+		c.openshiftHardwareDelaySeconds = hardwareDelayTimeout
+	}
+
+	return time.Duration(c.openshiftHardwareDelaySeconds)*time.Second + 2*time.Duration(c.ElectionTicks*int(c.TickMs))*time.Millisecond
 }
 
 func (c *ServerConfig) ElectionTimeout() time.Duration {

@@ -1,8 +1,20 @@
 module go.etcd.io/etcd/tools/v3
 
+<<<<<<< HEAD
 go 1.25.0
+||||||| 65251b30e
+go 1.24.0
+=======
+go 1.23.0
+>>>>>>> openshift-4.19
 
+<<<<<<< HEAD
 toolchain go1.25.10
+||||||| 65251b30e
+toolchain go1.24.11
+=======
+toolchain go1.23.12
+>>>>>>> openshift-4.19
 
 require (
 	github.com/alexkohler/nakedret v1.0.0
@@ -59,6 +71,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/trustmaster/go-aspell v0.0.0-20200701131845-c2b1f55bec8f // indirect
 	go.mongodb.org/mongo-driver v1.5.4 // indirect
+<<<<<<< HEAD
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
@@ -66,6 +79,22 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
 	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
+||||||| 65251b30e
+	golang.org/x/mod v0.29.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/sync v0.18.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/tools v0.38.0 // indirect
+	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
+=======
+	golang.org/x/mod v0.17.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
+>>>>>>> openshift-4.19
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

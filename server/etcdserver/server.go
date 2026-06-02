@@ -414,7 +414,7 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		if err = cfg.VerifyJoinExisting(); err != nil {
 			return nil, err
 		}
-		cl, err = membership.NewClusterFromURLsMap(cfg.Logger, cfg.InitialClusterToken, cfg.InitialPeerURLsMap)
+		cl, err = membership.NewClusterFromURLsMap(cfg.Logger, cfg.InitialClusterToken, cfg.InitialPeerURLsMap, membership.WithMaxLearners(cfg.ExperimentalMaxLearners))
 		if err != nil {
 			return nil, err
 		}
@@ -428,7 +428,10 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		if !isCompatibleWithCluster(cfg.Logger, cl, cl.MemberByName(cfg.Name).ID, prt) {
 			return nil, fmt.Errorf("incompatible with current running cluster")
 		}
-
+		scaleUpLearners := false
+		if err := membership.ValidateMaxLearnerConfig(cfg.ExperimentalMaxLearners, existingCluster.Members(), scaleUpLearners); err != nil {
+			return nil, err
+		}
 		remotes = existingCluster.Members()
 		cl.SetID(types.ID(0), existingCluster.ID())
 		cl.SetStore(st)
@@ -440,7 +443,7 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		if err = cfg.VerifyBootstrap(); err != nil {
 			return nil, err
 		}
-		cl, err = membership.NewClusterFromURLsMap(cfg.Logger, cfg.InitialClusterToken, cfg.InitialPeerURLsMap)
+		cl, err = membership.NewClusterFromURLsMap(cfg.Logger, cfg.InitialClusterToken, cfg.InitialPeerURLsMap, membership.WithMaxLearners(cfg.ExperimentalMaxLearners))
 		if err != nil {
 			return nil, err
 		}
@@ -462,7 +465,7 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 			if config.CheckDuplicateURL(urlsmap) {
 				return nil, fmt.Errorf("discovery cluster %s has duplicate url", urlsmap)
 			}
-			if cl, err = membership.NewClusterFromURLsMap(cfg.Logger, cfg.InitialClusterToken, urlsmap); err != nil {
+			if cl, err = membership.NewClusterFromURLsMap(cfg.Logger, cfg.InitialClusterToken, urlsmap, membership.WithMaxLearners(cfg.ExperimentalMaxLearners)); err != nil {
 				return nil, err
 			}
 		}
@@ -537,12 +540,18 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		if !cfg.ForceNewCluster {
 			id, cl, n, s, w = restartNode(cfg, snapshot)
 		} else {
-			id, cl, n, s, w = restartAsStandaloneNode(cfg, snapshot, ci)
+			id, cl, n, s, w = restartAsStandaloneNode(cfg, snapshot, ci, be)
 		}
 
 		cl.SetStore(st)
 		cl.SetBackend(be)
 		cl.Recover(api.UpdateCapability)
+
+		scaleUpLearners := false
+		if err := membership.ValidateMaxLearnerConfig(cfg.ExperimentalMaxLearners, cl.Members(), scaleUpLearners); err != nil {
+			return nil, err
+		}
+
 		if cl.Version() != nil && !cl.Version().LessThan(semver.Version{Major: 3}) && !beExist {
 			os.RemoveAll(bepath)
 			return nil, fmt.Errorf("database file (%v) of the backend is missing", bepath)

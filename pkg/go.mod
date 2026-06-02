@@ -1,20 +1,8 @@
 module go.etcd.io/etcd/pkg/v3
 
-<<<<<<< HEAD
-go 1.25.0
-||||||| 65251b30e
-go 1.24.0
-=======
 go 1.23.0
->>>>>>> openshift-4.19
 
-<<<<<<< HEAD
-toolchain go1.25.10
-||||||| 65251b30e
-toolchain go1.24.11
-=======
 toolchain go1.23.12
->>>>>>> openshift-4.19
 
 require (
 	github.com/creack/pty v1.1.11
@@ -33,25 +21,11 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-<<<<<<< HEAD
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
-||||||| 65251b30e
-	golang.org/x/net v0.47.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f // indirect
-	google.golang.org/protobuf v1.36.4 // indirect
-=======
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f // indirect
 	google.golang.org/protobuf v1.36.4 // indirect
->>>>>>> openshift-4.19
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

@@ -1,20 +1,8 @@
 module go.etcd.io/etcd/client/v2
 
-<<<<<<< HEAD
-go 1.25.0
-||||||| 65251b30e
-go 1.24.0
-=======
 go 1.23.0
->>>>>>> openshift-4.19
 
-<<<<<<< HEAD
-toolchain go1.25.10
-||||||| 65251b30e
-toolchain go1.24.11
-=======
 toolchain go1.23.12
->>>>>>> openshift-4.19
 
 require (
 	github.com/json-iterator/go v1.1.11

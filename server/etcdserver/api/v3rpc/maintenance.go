@@ -280,6 +280,22 @@ func (ams *authMaintenanceServer) isAuthenticated(ctx context.Context) error {
 	return ams.ag.AuthStore().IsAdminPermitted(authInfo)
 }
 
+func (ams *authMaintenanceServer) requireAuthInfo(ctx context.Context) error {
+	if !ams.ag.AuthStore().IsAuthEnabled() {
+		return nil
+	}
+
+	authInfo, err := ams.ag.AuthInfoFromCtx(ctx)
+	if err != nil {
+		return err
+	}
+
+	if authInfo == nil {
+		return auth.ErrUserEmpty
+	}
+	return nil
+}
+
 func (ams *authMaintenanceServer) Defragment(ctx context.Context, sr *pb.DefragmentRequest) (*pb.DefragmentResponse, error) {
 	if err := ams.isAuthenticated(ctx); err != nil {
 		return nil, err
@@ -311,14 +327,37 @@ func (ams *authMaintenanceServer) HashKV(ctx context.Context, r *pb.HashKVReques
 	return ams.maintenanceServer.HashKV(ctx, r)
 }
 
+func (ams *authMaintenanceServer) Alarm(ctx context.Context, ar *pb.AlarmRequest) (*pb.AlarmResponse, error) {
+	switch ar.GetAction() {
+	case pb.AlarmRequest_GET:
+		if err := ams.requireAuthInfo(ctx); err != nil {
+			return nil, togRPCError(err)
+		}
+	default:
+		if err := ams.isAuthenticated(ctx); err != nil {
+			return nil, togRPCError(err)
+		}
+	}
+	return ams.maintenanceServer.Alarm(ctx, ar)
+}
+
 func (ams *authMaintenanceServer) Status(ctx context.Context, ar *pb.StatusRequest) (*pb.StatusResponse, error) {
+	if err := ams.isAuthenticated(ctx); err != nil {
+		return nil, togRPCError(err)
+	}
 	return ams.maintenanceServer.Status(ctx, ar)
 }
 
 func (ams *authMaintenanceServer) MoveLeader(ctx context.Context, tr *pb.MoveLeaderRequest) (*pb.MoveLeaderResponse, error) {
+	if err := ams.isAuthenticated(ctx); err != nil {
+		return nil, togRPCError(err)
+	}
 	return ams.maintenanceServer.MoveLeader(ctx, tr)
 }
 
 func (ams *authMaintenanceServer) Downgrade(ctx context.Context, r *pb.DowngradeRequest) (*pb.DowngradeResponse, error) {
+	if err := ams.isAuthenticated(ctx); err != nil {
+		return nil, togRPCError(err)
+	}
 	return ams.maintenanceServer.Downgrade(ctx, r)
 }

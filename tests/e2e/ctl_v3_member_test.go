@@ -21,13 +21,16 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"go.etcd.io/bbolt"
+
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/client/pkg/v3/types"
 	"go.etcd.io/etcd/server/v3/datadir"
+	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/membership"
 	"go.etcd.io/etcd/server/v3/mvcc/buckets"
 	"go.etcd.io/etcd/tests/v3/framework/e2e"
@@ -93,6 +96,14 @@ func TestCtlV3MemberUpdateClientAutoTLS(t *testing.T) {
 }
 func TestCtlV3MemberUpdatePeerTLS(t *testing.T) {
 	testCtl(t, memberUpdateTest, withCfg(*e2e.NewConfigPeerTLS()))
+}
+
+func TestCtlV3MemberPromoteWithAuthFromLeader(t *testing.T) {
+	testCtl(t, memberPromoteWithAuth(false), withTestTimeout(30*time.Second))
+}
+
+func TestCtlV3MemberPromoteWithAuthFromFollower(t *testing.T) {
+	testCtl(t, memberPromoteWithAuth(true), withTestTimeout(30*time.Second))
 }
 
 func memberListTest(cx ctlCtx) {
@@ -415,5 +426,121 @@ func ensureAllMembersFromV3StoreAreVotingMembers(t *testing.T, dataDir string) {
 
 	for _, m := range members {
 		require.Falsef(t, m.IsLearner, "member is still learner: %+v", m)
+	}
+}
+
+func memberPromoteWithAuth(fromFollower bool) func(cx ctlCtx) {
+	return func(cx ctlCtx) {
+		// Add a regular member
+		_, err := cx.epc.StartNewProc(nil, false, cx.t)
+		require.NoError(cx.t, err)
+
+		var learnerID uint64
+		var addErr error
+		for {
+			// Add a learner once the cluster is healthy
+			learnerID, addErr = cx.epc.StartNewProc(nil, true, cx.t)
+			if addErr != nil {
+				if strings.Contains(addErr.Error(), "etcdserver: unhealthy cluster") {
+					time.Sleep(1 * time.Second)
+					continue
+				}
+			}
+			break
+		}
+		require.NoError(cx.t, addErr)
+
+		leaderIdx := cx.epc.WaitLeader(cx.t)
+		followerIdx := (leaderIdx + 1) % len(cx.epc.Procs)
+
+		require.NoError(cx.t, authEnable(cx))
+		cx.user, cx.pass = "root", "root"
+
+		if fromFollower {
+			_, err = cx.epc.Procs[followerIdx].
+				Etcdctl(e2e.ClientNonTLS, false, false).
+				MemberPromoteWithAuth(learnerID, cx.user, cx.pass)
+		} else {
+			_, err = cx.epc.Procs[leaderIdx].
+				Etcdctl(e2e.ClientNonTLS, false, false).
+				MemberPromoteWithAuth(learnerID, cx.user, cx.pass)
+		}
+
+		require.NoError(cx.t, err)
+	}
+}
+
+// TestCtlV3MemberAddAsLearnerWithOneMemberDown verifies the case
+// of adding new member when one or two existing members are down.
+// Refer to https://github.com/etcd-io/etcd/issues/21640
+func TestCtlV3MemberAddAsLearnerWithOneMemberDown(t *testing.T) {
+	testCases := []struct {
+		name        string
+		clusterSize int
+		downMembers int
+		expectErr   bool
+	}{
+		{
+			name:        "0 out of 1 member is down, allow adding member",
+			clusterSize: 1,
+			downMembers: 0,
+			expectErr:   false,
+		},
+		{
+			name:        "1 out of 3 members is down, reject adding member",
+			clusterSize: 3,
+			downMembers: 1,
+			expectErr:   true,
+		},
+		{
+			name:        "1 out of 4 members is down, allow adding member",
+			clusterSize: 4,
+			downMembers: 1,
+			expectErr:   false,
+		},
+		{
+			name:        "1 out of 5 members is down, allow adding member",
+			clusterSize: 5,
+			downMembers: 1,
+			expectErr:   false,
+		},
+		{
+			name:        "2 out of 5 members are down, reject adding member",
+			clusterSize: 5,
+			downMembers: 2,
+			expectErr:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			e2e.BeforeTest(t)
+
+			t.Logf("Bootstrap a cluster with %d members", tc.clusterSize)
+			epc, err := e2e.NewEtcdProcessCluster(t, &e2e.EtcdProcessClusterConfig{
+				ClusterSize: tc.clusterSize,
+			})
+			require.NoError(t, err)
+			defer func() {
+				_ = epc.Close()
+			}()
+
+			t.Logf("Killing %d member", tc.downMembers)
+			for i := 0; i < tc.downMembers; i++ {
+				t.Logf("Killing member, name: %s, peerURL: %s", epc.Procs[i].Config().Name, epc.Procs[i].Config().Purl.String())
+				err = epc.Procs[i].Kill()
+				require.NoError(t, err)
+			}
+
+			time.Sleep(etcdserver.HealthInterval + 2*time.Second)
+
+			t.Log("Adding a new learner")
+			_, err = epc.Procs[len(epc.Procs)-1].Etcdctl(e2e.ClientNonTLS, false, false).MemberAddAsLearner("new-learner", []string{"http://10.0.0.12:2380"})
+			if tc.expectErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }

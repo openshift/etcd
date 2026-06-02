@@ -20,12 +20,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/tests/v3/framework/e2e"
 )
@@ -1136,21 +1138,26 @@ func authTestEndpointHealth(cx ctlCtx) {
 		cx.t.Fatalf("endpointStatusTest ctlV3EndpointHealth error (%v)", err)
 	}
 
-	// health checking with an ordinary user "succeeds" since permission denial goes through consensus
-	cx.user, cx.pass = "test-user", "pass"
-	if err := ctlV3EndpointHealth(cx); err != nil {
-		cx.t.Fatalf("endpointStatusTest ctlV3EndpointHealth error (%v)", err)
-	}
-
 	// succeed if permissions granted for ordinary user
 	cx.user, cx.pass = "root", "root"
 	if err := ctlV3RoleGrantPermission(cx, "test-role", grantingPerm{true, true, "health", "", false}); err != nil {
 		cx.t.Fatal(err)
 	}
+
 	cx.user, cx.pass = "test-user", "pass"
 	if err := ctlV3EndpointHealth(cx); err != nil {
 		cx.t.Fatalf("endpointStatusTest ctlV3EndpointHealth error (%v)", err)
 	}
+
+	cmdArgs := append(cx.PrefixArgs(), "endpoint", "health", "--user=root:root", "--cluster")
+	proc, err := e2e.SpawnCmd(cmdArgs, cx.envMap)
+	require.NoError(cx.t, err)
+	defer func() {
+		require.NoError(cx.t, proc.Close())
+	}()
+	proc.Wait()
+	response := strings.Join(proc.Lines(), "\n")
+	require.Contains(cx.t, response, "is healthy: successfully")
 }
 
 func certCNAndUsername(cx ctlCtx, noPassword bool) {
@@ -1455,7 +1462,7 @@ func authTestRecoverSnapshot(cx ctlCtx) {
 	_, err = cliUser.Put(context.TODO(), "foo", "bar")
 	require.NoError(cx.t, err)
 
-	//verify all nodes have the same revision and hash
+	// verify all nodes have the same revision and hash
 	var endpoints []string
 	for _, proc := range cx.epc.Procs {
 		endpoints = append(endpoints, proc.Config().Acurl)

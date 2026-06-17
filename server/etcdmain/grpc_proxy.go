@@ -439,7 +439,7 @@ func newClientCfg(lg *zap.Logger, eps []string) (*clientv3.Config, error) {
 	return &cfg, nil
 }
 
-func newTLS(ca, cert, key string, requireEmptyCN bool) *transport.TLSInfo {
+func newTLS(ca, cert, key string, _ bool) *transport.TLSInfo {
 	if ca == "" && cert == "" && key == "" {
 		return nil
 	}

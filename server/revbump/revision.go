@@ -1,3 +1,17 @@
+// Copyright 2025 The etcd Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package revbump
 
 import "encoding/binary"
@@ -6,7 +20,6 @@ import "encoding/binary"
 // First 8 bytes is the revision.main in big-endian format. The 9th byte
 // is a '_'. The last 8 bytes is the revision.sub in big-endian format.
 const revBytesLen = 8 + 1 + 8
-const markedRevBytesLen = revBytesLen + 1
 
 // A revision indicates modification of the key-value space.
 // The set of changes that share same main revision changes the key-value space atomically.

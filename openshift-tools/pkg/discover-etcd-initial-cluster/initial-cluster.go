@@ -1,3 +1,17 @@
+// Copyright 2025 The etcd Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package discover_etcd_initial_cluster
 
 import (
@@ -5,7 +19,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go.uber.org/zap"
 	"net/url"
 	"os"
 	"path"
@@ -16,12 +29,12 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
-	"go.etcd.io/etcd/client/v3"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 type DiscoverEtcdInitialClusterOptions struct {
@@ -258,7 +271,7 @@ func (o *DiscoverEtcdInitialClusterOptions) getInitialCluster(members []*etcdser
 			return "", true, nil
 		}
 
-		return "", memberFound, fmt.Errorf("member %q not found in member list but dataDir exists, check operator logs for possible scaling problems\n", target.String())
+		return "", memberFound, fmt.Errorf("member %q not found in member list but dataDir exists, check operator logs for possible scaling problems", target.String())
 	}
 
 	// Condition: member not found, no dataDir
@@ -370,7 +383,6 @@ func logCurrentMembership(members []*etcdserverpb.Member) {
 	for _, member := range members {
 		fmt.Fprintf(os.Stderr, "      member=%s\n", stringifyMember(member))
 	}
-	return
 }
 
 // formatInitialCluster populates the initial cluster comma delimited string in the format <peerName>=<peerUrl>.

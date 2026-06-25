@@ -3,6 +3,10 @@
 etcd is Apache 2.0 licensed and accepts contributions via GitHub pull requests.
 This document outlines the basics of contributing to etcd.
 
+**Note**: This is the **OpenShift fork** of etcd. For OpenShift-specific procedures, see [REBASE.openshift.md](./REBASE.openshift.md).
+
+## Contributor Workflow
+
 This is a rough outline of what a contributor's workflow looks like:
 * [Find something to work on](#Find-something-to-work-on)
   * [Check for flaky tests](#Check-for-flaky-tests)
@@ -20,11 +24,19 @@ If you have any questions, please reach out using one of the methods listed in [
 
 Before making a change please look through the resources below to learn more about etcd and tools used for development.
 
+**Essential Reading** (especially for new contributors):
+* **[CLAUDE.md](./CLAUDE.md)** / **[AGENTS.md](./AGENTS.md)** - AI agent entry point and comprehensive development guide with code organization, workflows, and best practices
+* **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Detailed architecture documentation covering Raft, MVCC, storage, and more
+* **[REBASE.openshift.md](./REBASE.openshift.md)** - OpenShift-specific rebase procedures
+
+**External Resources**:
 * Please learn about [Git](https://github.com/git-guides) version control system used in etcd.
 * Read the [etcd learning resources](https://etcd.io/docs/v3.5/learning/)
 * Read the [etcd community membership](/Documentation/contributor-guide/community-membership.md)
 * Watch [etcd deep dive](https://www.youtube.com/watch?v=D2pm6ufIt98&t=927s)
 * Watch [etcd code walkthrough](https://www.youtube.com/watch?v=H3XaSF6wF7w)
+* Read the [Raft consensus algorithm paper](https://raft.github.io/raft.pdf)
+* Upstream repository: https://github.com/etcd-io/etcd
 
 ## Find something to work on
 

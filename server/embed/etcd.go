@@ -221,6 +221,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		PreVote:                           cfg.PreVote,
 		Logger:                            cfg.logger,
 		ForceNewCluster:                   cfg.ForceNewCluster,
+		ForceNewClusterBumpAmount:         cfg.ForceNewClusterBumpAmount,
 		EnableGRPCGateway:                 cfg.EnableGRPCGateway,
 		EnableDistributedTracing:          cfg.EnableDistributedTracing,
 		UnsafeNoFsync:                     cfg.UnsafeNoFsync,

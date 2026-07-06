@@ -20,17 +20,8 @@ require (
 	github.com/cheggaaa/pb/v3 v3.1.6
 	github.com/coreos/go-semver v0.3.1
 	github.com/dustin/go-humanize v1.0.1
-<<<<<<< HEAD
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-||||||| a0614505a
-	github.com/spf13/cobra v1.9.1
-	github.com/stretchr/testify v1.10.0
-=======
-	github.com/spf13/cobra v1.9.1
-	github.com/spf13/pflag v1.0.6
-	github.com/stretchr/testify v1.10.0
->>>>>>> openshift/openshift-4.22
 	go.etcd.io/bbolt v1.4.3
 	go.etcd.io/etcd/api/v3 v3.6.13
 	go.etcd.io/etcd/client/pkg/v3 v3.6.13
@@ -85,12 +76,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
-<<<<<<< HEAD
 	github.com/spf13/pflag v1.0.10 // indirect
-||||||| a0614505a
-	github.com/spf13/pflag v1.0.6 // indirect
-=======
->>>>>>> openshift/openshift-4.22
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	go.etcd.io/gofail v0.2.0 // indirect

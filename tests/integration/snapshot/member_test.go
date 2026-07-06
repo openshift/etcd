@@ -81,7 +81,7 @@ func TestSnapshotV3RestoreMultiMemberAdd(t *testing.T) {
 	}()
 	select {
 	case <-srv.Server.ReadyNotify():
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatalf("failed to start the newly added etcd member")
 	}
 

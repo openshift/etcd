@@ -58,9 +58,7 @@ var (
 	}
 
 	deprecatedFlags = map[string]string{
-		// TODO: remove in 3.7.
-		"snapshot-count": "--snapshot-count is deprecated in 3.6 and will be decommissioned in 3.7.",
-		"max-snapshots":  "--max-snapshots is deprecated in 3.6 and will be decommissioned in 3.7.",
+		"max-snapshots":  "--max-snapshots is deprecated in 3.6 and will be decommissioned in 3.8.",
 		"v2-deprecation": "--v2-deprecation is deprecated and scheduled for removal in v3.8. The default value is enforced, ignoring user input.",
 		"experimental-compact-hash-check-enabled":           "--experimental-compact-hash-check-enabled is deprecated in 3.6 and will be decommissioned in 3.7. Use '--feature-gates=CompactHashCheck=true' instead.",
 		"experimental-compact-hash-check-time":              "--experimental-compact-hash-check-time is deprecated in 3.6 and will be decommissioned in 3.7. Use '--compact-hash-check-time' instead.",
@@ -118,6 +116,7 @@ func newConfig() *config {
 		),
 		v2deprecation: flags.NewSelectiveStringsValue(
 			string(cconfig.V2Depr1WriteOnly),
+			string(cconfig.V2Depr1WriteOnlySkipCheck),
 			string(cconfig.V2Depr1WriteOnlyDrop),
 			string(cconfig.V2Depr2Gone)),
 	}
@@ -247,8 +246,11 @@ func (cfg *config) parse(arguments []string) error {
 		cfg.ec.DistributedTracingSamplingRatePerMillion = cfg.ec.ExperimentalDistributedTracingSamplingRatePerMillion
 	}
 
-	// `V2Deprecation` (--v2-deprecation) is deprecated and scheduled for removal in v3.8. The default value is enforced, ignoring user input.
-	cfg.ec.V2Deprecation = cconfig.V2DeprDefault
+	// `V2Deprecation` (--v2-deprecation) is deprecated and scheduled for removal in v3.8.
+	// It can only be V2DeprDefault or V2Depr1WriteOnlySkipCheck, ignore other user input.
+	if cfg.ec.V2Deprecation != cconfig.V2Depr1WriteOnlySkipCheck {
+		cfg.ec.V2Deprecation = cconfig.V2DeprDefault
+	}
 
 	cfg.ec.WarningUnaryRequestDuration, perr = cfg.parseWarningUnaryRequestDuration()
 	if perr != nil {

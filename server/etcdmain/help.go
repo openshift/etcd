@@ -58,7 +58,7 @@ Member:
   --wal-dir ''
     Path to the dedicated wal directory.
   --snapshot-count '10000'
-    Number of committed transactions to trigger a snapshot to disk. Deprecated in v3.6 and will be decommissioned in v3.7.
+    Number of committed transactions to trigger a snapshot.
   --heartbeat-interval '100'
     Time (in milliseconds) of a heartbeat interval.
   --election-timeout '1000'
@@ -72,7 +72,7 @@ Member:
   --listen-client-http-urls ''
     List of URLs to listen on for http only client traffic. Enabling this flag removes http services from --listen-client-urls.
   --max-snapshots '` + strconv.Itoa(embed.DefaultMaxSnapshots) + `'
-    Maximum number of snapshot files to retain (0 is unlimited). Deprecated in v3.6 and will be decommissioned in v3.7.
+    Maximum number of snapshot files to retain (0 is unlimited). Deprecated in v3.6 and will be decommissioned in v3.8.
   --max-wals '` + strconv.Itoa(embed.DefaultMaxWALs) + `'
     Maximum number of wal files to retain (0 is unlimited).
   --memory-mlock
@@ -173,6 +173,7 @@ Clustering:
     Supported values:
       'not-yet'                // Issues a warning if v2store have meaningful content (default in v3.5)
       'write-only'             // Custom v2 state is not allowed (default in v3.6)
+      'write-only-skip-check'  // Custom v2 state is not allowed similar to 'write-only', but bypass the v2 content check. WARNING: Users should read the 3.5 -> 3.6 upgrade guide and use this option at their own risk.
       'write-only-drop-data'   // Custom v2 state will get DELETED ! (planned default in v3.7)
       'gone'                   // v2store is not maintained any longer. (planned to cleanup anything related to v2store in v3.8)
 

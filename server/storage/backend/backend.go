@@ -469,7 +469,6 @@ func (b *backend) defrag() error {
 	isDefragActive.Set(1)
 	defer isDefragActive.Set(0)
 
-	// TODO: make this non-blocking?
 	// lock batchTx to ensure nobody is using previous tx, and then
 	// close previous ongoing tx.
 	b.batchTx.LockOutsideApply()
@@ -483,50 +482,12 @@ func (b *backend) defrag() error {
 	b.readTx.Lock()
 	defer b.readTx.Unlock()
 
-	// Create a temporary file to ensure we start with a clean slate.
-	// Snapshotter.cleanupSnapdir cleans up any of these that are found during startup.
-	dir := filepath.Dir(b.db.Path())
-	temp, err := os.CreateTemp(dir, "db.tmp.*")
+	tmpdb, tdbp, err := b.defragOpenTmpDB()
 	if err != nil {
 		return err
 	}
 
-	options := bolt.Options{}
-	if boltOpenOptions != nil {
-		options = *boltOpenOptions
-	}
-	options.OpenFile = func(_ string, _ int, _ os.FileMode) (file *os.File, err error) {
-		// gofail: var defragOpenFileError string
-		// return nil, fmt.Errorf(defragOpenFileError)
-		return temp, nil
-	}
-	// Don't load tmp db into memory regardless of opening options
-	options.Mlock = false
-	tdbp := temp.Name()
-	tmpdb, err := bolt.Open(tdbp, 0o600, &options)
-	if err != nil {
-		temp.Close()
-		if rmErr := os.Remove(temp.Name()); rmErr != nil {
-			b.lg.Error(
-				"failed to remove temporary file",
-				zap.String("path", temp.Name()),
-				zap.Error(rmErr),
-			)
-		}
-
-		return err
-	}
-
-	dbp := b.db.Path()
-	size1, sizeInUse1 := b.Size(), b.SizeInUse()
-	b.lg.Info(
-		"defragmenting",
-		zap.String("path", dbp),
-		zap.Int64("current-db-size-bytes", size1),
-		zap.String("current-db-size", humanize.Bytes(uint64(size1))),
-		zap.Int64("current-db-size-in-use-bytes", sizeInUse1),
-		zap.String("current-db-size-in-use", humanize.Bytes(uint64(sizeInUse1))),
-	)
+	dbPath, initialSize, initialSizeInUse := b.defragLogStart()
 
 	defer func() {
 		// NOTE: We should exit as soon as possible because that tx
@@ -545,10 +506,7 @@ func (b *backend) defrag() error {
 	// gofail: var defragBeforeCopy struct{}
 	err = defragdb(b.db, tmpdb, defragLimit)
 	if err != nil {
-		tmpdb.Close()
-		if rmErr := os.RemoveAll(tmpdb.Path()); rmErr != nil {
-			b.lg.Error("failed to remove db.tmp after defragmentation completed", zap.Error(rmErr))
-		}
+		b.cleanupTmpDB(tmpdb, tdbp)
 
 		// restore the bbolt transactions if defragmentation fails
 		b.batchTx.tx = b.unsafeBegin(true)
@@ -557,49 +515,9 @@ func (b *backend) defrag() error {
 		return err
 	}
 
-	err = b.db.Close()
-	if err != nil {
-		b.lg.Fatal("failed to close database", zap.Error(err))
-	}
-	err = tmpdb.Close()
-	if err != nil {
-		b.lg.Fatal("failed to close tmp database", zap.Error(err))
-	}
-	// gofail: var defragBeforeRename struct{}
-	err = os.Rename(tdbp, dbp)
-	if err != nil {
-		b.lg.Fatal("failed to rename tmp database", zap.Error(err))
-	}
+	b.defragSwap(tmpdb, tdbp, dbPath)
 
-	b.db, err = bolt.Open(dbp, 0o600, b.bopts)
-	if err != nil {
-		b.lg.Fatal("failed to open database", zap.String("path", dbp), zap.Error(err))
-	}
-	b.batchTx.tx = b.unsafeBegin(true)
-
-	b.readTx.reset()
-	b.readTx.tx = b.unsafeBegin(false)
-
-	size := b.readTx.tx.Size()
-	db := b.readTx.tx.DB()
-	atomic.StoreInt64(&b.size, size)
-	atomic.StoreInt64(&b.sizeInUse, size-(int64(db.Stats().FreePageN)*int64(db.Info().PageSize)))
-
-	took := time.Since(now)
-	defragSec.Observe(took.Seconds())
-
-	size2, sizeInUse2 := b.Size(), b.SizeInUse()
-	b.lg.Info(
-		"finished defragmenting directory",
-		zap.String("path", dbp),
-		zap.Int64("current-db-size-bytes-diff", size2-size1),
-		zap.Int64("current-db-size-bytes", size2),
-		zap.String("current-db-size", humanize.Bytes(uint64(size2))),
-		zap.Int64("current-db-size-in-use-bytes-diff", sizeInUse2-sizeInUse1),
-		zap.Int64("current-db-size-in-use-bytes", sizeInUse2),
-		zap.String("current-db-size-in-use", humanize.Bytes(uint64(sizeInUse2))),
-		zap.Duration("took", took),
-	)
+	b.defragLogFinish(dbPath, initialSize, initialSizeInUse, now)
 	return nil
 }
 
@@ -607,6 +525,17 @@ func defragdb(odb, tmpdb *bolt.DB, limit int) error {
 	// gofail: var defragdbFail string
 	// return fmt.Errorf(defragdbFail)
 
+	// open a tx on old db for read
+	tx, err := odb.Begin(false)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	return defragFromTx(tx, tmpdb, limit)
+}
+
+func defragFromTx(tx *bolt.Tx, tmpdb *bolt.DB, limit int) error {
 	// open a tx on tmpdb for writes
 	tmptx, err := tmpdb.Begin(true)
 	if err != nil {
@@ -617,13 +546,6 @@ func defragdb(odb, tmpdb *bolt.DB, limit int) error {
 			tmptx.Rollback()
 		}
 	}()
-
-	// open a tx on old db for read
-	tx, err := odb.Begin(false)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 
 	c := tx.Cursor()
 
@@ -663,6 +585,110 @@ func defragdb(odb, tmpdb *bolt.DB, limit int) error {
 	}
 
 	return tmptx.Commit()
+}
+
+func (b *backend) defragOpenTmpDB() (*bolt.DB, string, error) {
+	// Create a temporary file to ensure we start with a clean slate.
+	// Snapshotter.cleanupSnapdir cleans up any of these that are found during startup.
+	dir := filepath.Dir(b.db.Path())
+	temp, err := os.CreateTemp(dir, "db.tmp.*")
+	if err != nil {
+		return nil, "", err
+	}
+
+	options := bolt.Options{}
+	if boltOpenOptions != nil {
+		options = *boltOpenOptions
+	}
+	options.OpenFile = func(_ string, _ int, _ os.FileMode) (file *os.File, err error) {
+		// gofail: var defragOpenFileError string
+		// return nil, fmt.Errorf(defragOpenFileError)
+		return temp, nil
+	}
+	// Don't load tmp db into memory regardless of opening options
+	options.Mlock = false
+	tdbp := temp.Name()
+	tmpdb, err := bolt.Open(tdbp, 0o600, &options)
+	if err != nil {
+		temp.Close()
+		if rmErr := os.Remove(temp.Name()); rmErr != nil {
+			b.lg.Error(
+				"failed to remove temporary file",
+				zap.String("path", temp.Name()),
+				zap.Error(rmErr),
+			)
+		}
+
+		return nil, "", err
+	}
+	return tmpdb, tdbp, nil
+}
+
+func (b *backend) cleanupTmpDB(tmpdb *bolt.DB, tdbp string) {
+	tmpdb.Close()
+	if rmErr := os.RemoveAll(tdbp); rmErr != nil {
+		b.lg.Error("failed to remove tmp database", zap.String("path", tdbp), zap.Error(rmErr))
+	}
+}
+
+func (b *backend) defragLogStart() (string, int64, int64) {
+	dbPath := b.db.Path()
+	size, sizeInUse := b.Size(), b.SizeInUse()
+	b.lg.Info("defragmenting",
+		zap.String("path", dbPath),
+		zap.Int64("current-db-size-bytes", size),
+		zap.String("current-db-size", humanize.Bytes(uint64(size))),
+		zap.Int64("current-db-size-in-use-bytes", sizeInUse),
+		zap.String("current-db-size-in-use", humanize.Bytes(uint64(sizeInUse))),
+	)
+	return dbPath, size, sizeInUse
+}
+func (b *backend) defragSwap(tmpdb *bolt.DB, tdbp, dbp string) {
+	var err error
+	err = b.db.Close()
+	if err != nil {
+		b.lg.Fatal("failed to close database", zap.Error(err))
+	}
+	err = tmpdb.Close()
+	if err != nil {
+		b.lg.Fatal("failed to close tmp database", zap.Error(err))
+	}
+	// gofail: var defragBeforeRename struct{}
+	err = os.Rename(tdbp, dbp)
+	if err != nil {
+		b.lg.Fatal("failed to rename tmp database", zap.Error(err))
+	}
+
+	b.db, err = bolt.Open(dbp, 0o600, b.bopts)
+	if err != nil {
+		b.lg.Fatal("failed to open database", zap.String("path", dbp), zap.Error(err))
+	}
+	b.batchTx.tx = b.unsafeBegin(true)
+
+	b.readTx.reset()
+	b.readTx.tx = b.unsafeBegin(false)
+
+	size := b.readTx.tx.Size()
+	db := b.readTx.tx.DB()
+	atomic.StoreInt64(&b.size, size)
+	atomic.StoreInt64(&b.sizeInUse, size-(int64(db.Stats().FreePageN)*int64(db.Info().PageSize)))
+}
+
+func (b *backend) defragLogFinish(dbPath string, initialSize, initialSizeInUse int64, start time.Time) {
+	took := time.Since(start)
+	defragSec.Observe(took.Seconds())
+
+	newSize, newSizeInUse := b.Size(), b.SizeInUse()
+	b.lg.Info("finished defragmenting directory",
+		zap.String("path", dbPath),
+		zap.Int64("current-db-size-bytes-diff", newSize-initialSize),
+		zap.Int64("current-db-size-bytes", newSize),
+		zap.String("current-db-size", humanize.Bytes(uint64(newSize))),
+		zap.Int64("current-db-size-in-use-bytes-diff", newSizeInUse-initialSizeInUse),
+		zap.Int64("current-db-size-in-use-bytes", newSizeInUse),
+		zap.String("current-db-size-in-use", humanize.Bytes(uint64(newSizeInUse))),
+		zap.Duration("took", took),
+	)
 }
 
 func (b *backend) begin(write bool) *bolt.Tx {

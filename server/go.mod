@@ -80,3 +80,11 @@ replace (
 	go.etcd.io/etcd/client/v3 => ../client/v3
 	go.etcd.io/etcd/pkg/v3 => ../pkg
 )
+
+// Bad imports are sometimes causing attempts to pull that code.
+// This makes the error more explicit.
+replace go.etcd.io/etcd => ./FORBIDDEN_DEPENDENCY
+
+replace go.etcd.io/tests/v3 => ./FORBIDDEN_DEPENDENCY
+
+replace go.etcd.io/bbolt => github.com/openshift/bbolt v0.0.0-20260806041816-148dcef86a15

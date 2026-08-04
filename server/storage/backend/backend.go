@@ -15,6 +15,7 @@
 package backend
 
 import (
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -28,6 +29,7 @@ import (
 	"go.uber.org/zap"
 
 	bolt "go.etcd.io/bbolt"
+	bolterrors "go.etcd.io/bbolt/errors"
 	"go.etcd.io/etcd/client/pkg/v3/verify"
 )
 
@@ -127,6 +129,16 @@ type backend struct {
 	// txPostLockInsideApplyHook is called each time right after locking the tx.
 	txPostLockInsideApplyHook func()
 
+	// nonBlockingDefrag enables the journal-based non-blocking defrag path.
+	nonBlockingDefrag bool
+	// defragJournalMaxOps is the journal backpressure limit.
+	// 0 means unlimited (no backpressure).
+	defragJournalMaxOps int
+
+	// nonBlockDefragCopyFailHook, if non-nil, is called instead of defragFromTx
+	// during the copy phase. Used by tests to simulate copy failures.
+	nonBlockDefragCopyFailHook func() error
+
 	lg *zap.Logger
 }
 
@@ -150,6 +162,14 @@ type BackendConfig struct {
 
 	// Hooks are getting executed during lifecycle of Backend's transactions.
 	Hooks Hooks
+
+	// NonBlockingDefrag enables the journal-based non-blocking defrag
+	// algorithm. When false, the legacy blocking defrag is used.
+	NonBlockingDefrag bool
+	// DefragJournalMaxOps is the backpressure threshold for the defrag
+	// journal. Writers block when the journal reaches this size.
+	// 0 means unlimited (no backpressure).
+	DefragJournalMaxOps int
 }
 
 type BackendConfigOption func(*BackendConfig)
@@ -234,6 +254,9 @@ func newBackend(bcfg BackendConfig) *backend {
 
 		stopc: make(chan struct{}),
 		donec: make(chan struct{}),
+
+		nonBlockingDefrag:   bcfg.NonBlockingDefrag,
+		defragJournalMaxOps: bcfg.DefragJournalMaxOps,
 
 		lg: bcfg.Logger,
 	}
@@ -460,6 +483,9 @@ func (b *backend) Commits() int64 {
 }
 
 func (b *backend) Defrag() error {
+	if b.nonBlockingDefrag {
+		return b.defragNonBlocking()
+	}
 	return b.defrag()
 }
 
@@ -516,6 +542,56 @@ func (b *backend) defrag() error {
 	}
 
 	b.defragSwap(tmpdb, tdbp, dbPath)
+
+	b.defragLogFinish(dbPath, initialSize, initialSizeInUse, now)
+	return nil
+}
+
+// defragNonBlocking uses a journal to capture writes during the copy
+// phase, allowing writes to continue unblocked. Only the journal
+// replay and database swap hold the write lock.
+func (b *backend) defragNonBlocking() error {
+	verify.Assert(b.lg != nil, "the logger should not be nil")
+	now := time.Now()
+	isDefragActive.Set(1)
+	defer isDefragActive.Set(0)
+
+	tmpdb, tdbp, err := b.defragOpenTmpDB()
+	if err != nil {
+		return err
+	}
+
+	dbPath, initialSize, initialSizeInUse := b.defragLogStart()
+
+	readTx, err := b.nonBlockDefragPrepare()
+	if err != nil {
+		b.cleanupTmpDB(tmpdb, tdbp)
+		return err
+	}
+	defer b.nonBlockDefragCancelJournal()
+
+	b.lg.Info("defrag: copying data (writes unlocked)")
+
+	// gofail: var defragNonBlockingBeforeCopy struct{}
+	if b.nonBlockDefragCopyFailHook != nil {
+		err = b.nonBlockDefragCopyFailHook()
+	} else {
+		err = defragFromTx(readTx, tmpdb, defragLimit)
+	}
+	readTx.Rollback()
+
+	if err != nil {
+		b.cleanupTmpDB(tmpdb, tdbp)
+		return err
+	}
+
+	// gofail: var defragBeforeReplay struct{}
+	b.lg.Info("defrag: replaying journal")
+	err = b.nonBlockDefragReplayAndSwap(tmpdb, tdbp, dbPath)
+	if err != nil {
+		b.cleanupTmpDB(tmpdb, tdbp)
+		return err
+	}
 
 	b.defragLogFinish(dbPath, initialSize, initialSizeInUse, now)
 	return nil
@@ -643,6 +719,140 @@ func (b *backend) defragLogStart() (string, int64, int64) {
 	)
 	return dbPath, size, sizeInUse
 }
+
+// nonBlockDefragPrepare commits pending writes, opens a read-only bbolt
+// transaction for the copy phase, and installs a journal to capture
+// writes that occur during the copy.
+func (b *backend) nonBlockDefragPrepare() (*bolt.Tx, error) {
+	b.batchTx.LockOutsideApply()
+	defer b.batchTx.Unlock()
+
+	b.batchTx.commit(false)
+
+	b.mu.RLock()
+	readTx, err := b.db.Begin(false)
+	b.mu.RUnlock()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin read tx for defrag: %w", err)
+	}
+
+	b.batchTx.defragJournal.Store(newDefragJournal(b.defragJournalMaxOps))
+	return readTx, nil
+}
+
+// nonBlockDefragCancelJournal removes the journal from the batch transaction
+// and closes it. Safe to call even if the journal was already
+// drained or never installed.
+func (b *backend) nonBlockDefragCancelJournal() {
+	b.batchTx.LockOutsideApply()
+	defer b.batchTx.Unlock()
+	if journal := b.batchTx.defragJournal.Swap(nil); journal != nil {
+		// If we reach here, we errored while defragging so we need
+		// to clean up the journal, so we're intentionally dropping
+		// the operations.
+		_ = journal.closeAndDrain()
+	}
+}
+
+func (b *backend) nonBlockDefragReplayAndSwap(tmpdb *bolt.DB, tdbp, dbp string) error {
+	b.batchTx.LockOutsideApply()
+	defer b.batchTx.Unlock()
+
+	journal := b.batchTx.defragJournal.Swap(nil)
+	ops := journal.closeAndDrain()
+
+	if len(ops) > 0 {
+		b.lg.Info("defrag: replaying journal ops", zap.Int("count", len(ops)))
+	}
+
+	if err := nonBlockDefragReplayJournal(tmpdb, ops, defragLimit); err != nil {
+		return err
+	}
+
+	b.lg.Info("defrag: switching database")
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.readTx.Lock()
+	defer b.readTx.Unlock()
+
+	// NOTE: We should exit as soon as possible because that tx
+	// might be closed. The inflight request might use invalid
+	// tx and then panic as well. The real panic reason might be
+	// shadowed by new panic. So, we should fatal here with lock.
+	defer func() {
+		if rerr := recover(); rerr != nil {
+			b.lg.Fatal("unexpected panic during defrag", zap.Any("panic", rerr))
+		}
+	}()
+
+	b.batchTx.unsafeCommit(true)
+	b.batchTx.tx = nil
+
+	b.defragSwap(tmpdb, tdbp, dbp)
+	return nil
+}
+
+func nonBlockDefragReplayJournal(tmpdb *bolt.DB, ops []defragJournalOp, limit int) (err error) {
+	if len(ops) == 0 {
+		return nil
+	}
+
+	tx, err := tmpdb.Begin(true)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	count := 0
+	for _, op := range ops {
+		count++
+		if count > limit {
+			if err = tx.Commit(); err != nil {
+				return err
+			}
+			tx, err = tmpdb.Begin(true)
+			if err != nil {
+				return err
+			}
+			count = 0
+		}
+
+		switch op.opType {
+		case opCreateBucket:
+			if _, err = tx.CreateBucketIfNotExists(op.bucketName); err != nil {
+				return fmt.Errorf("replay: create bucket %s: %w", op.bucketName, err)
+			}
+		case opDeleteBucket:
+			if delErr := tx.DeleteBucket(op.bucketName); delErr != nil && !errors.Is(delErr, bolterrors.ErrBucketNotFound) {
+				return fmt.Errorf("replay: delete bucket %s: %w", op.bucketName, delErr)
+			}
+		case opPut:
+			b := tx.Bucket(op.bucketName)
+			if b == nil {
+				return fmt.Errorf("replay: bucket %s not found for put", op.bucketName)
+			}
+			if err = b.Put(op.key, op.value); err != nil {
+				return fmt.Errorf("replay: put in bucket %s: %w", op.bucketName, err)
+			}
+		case opDelete:
+			b := tx.Bucket(op.bucketName)
+			if b == nil {
+				return fmt.Errorf("replay: bucket %s not found for delete", op.bucketName)
+			}
+			if err = b.Delete(op.key); err != nil {
+				return fmt.Errorf("replay: delete from bucket %s: %w", op.bucketName, err)
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (b *backend) defragSwap(tmpdb *bolt.DB, tdbp, dbp string) {
 	var err error
 	err = b.db.Close()

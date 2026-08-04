@@ -109,6 +109,12 @@ func Exploratory(_ *testing.T) []TestScenario {
 		name := filepath.Join(tp.Name, "ClusterOfSize1")
 		clusterOfSize1Options := baseOptions
 		clusterOfSize1Options = append(clusterOfSize1Options, e2e.WithClusterSize(1))
+		// NonBlockingDefrag is safe to randomize only for single-member clusters
+		// because mixed-version clusters (clusterOfSize3) may use older binaries
+		// that don't support this feature gate.
+		clusterOfSize1Options = append(clusterOfSize1Options,
+			options.WithSubsetOptions(e2e.WithServerFeatureGate("NonBlockingDefrag", true)),
+		)
 		scenarios = append(scenarios, TestScenario{
 			Name:    name,
 			Traffic: tp.Traffic,
@@ -177,6 +183,41 @@ func Regression(t *testing.T) []TestScenario {
 		Cluster: *e2e.NewConfig(
 			e2e.WithClusterSize(1),
 			e2e.WithGoFailEnabled(true),
+		),
+	})
+	// Non-blocking defrag regression scenarios: test crash recovery at each
+	// phase of the non-blocking defrag pipeline.
+	scenarios = append(scenarios, TestScenario{
+		Name:      "NonBlockingDefragBeforeCopyPanic",
+		Failpoint: failpoint.DefragNonBlockingBeforeCopyPanic,
+		Profile:   traffic.LowTraffic,
+		Traffic:   traffic.EtcdPutDeleteLease,
+		Cluster: *e2e.NewConfig(
+			e2e.WithClusterSize(1),
+			e2e.WithGoFailEnabled(true),
+			e2e.WithServerFeatureGate("NonBlockingDefrag", true),
+		),
+	})
+	scenarios = append(scenarios, TestScenario{
+		Name:      "NonBlockingDefragBeforeReplayPanic",
+		Failpoint: failpoint.DefragBeforeReplayPanic,
+		Profile:   traffic.LowTraffic,
+		Traffic:   traffic.EtcdPutDeleteLease,
+		Cluster: *e2e.NewConfig(
+			e2e.WithClusterSize(1),
+			e2e.WithGoFailEnabled(true),
+			e2e.WithServerFeatureGate("NonBlockingDefrag", true),
+		),
+	})
+	scenarios = append(scenarios, TestScenario{
+		Name:      "NonBlockingDefragBeforeRenamePanic",
+		Failpoint: failpoint.DefragBeforeRenamePanic,
+		Profile:   traffic.LowTraffic,
+		Traffic:   traffic.EtcdPutDeleteLease,
+		Cluster: *e2e.NewConfig(
+			e2e.WithClusterSize(1),
+			e2e.WithGoFailEnabled(true),
+			e2e.WithServerFeatureGate("NonBlockingDefrag", true),
 		),
 	})
 	scenarios = append(scenarios, TestScenario{

@@ -32,6 +32,8 @@ import (
 
 var (
 	DefragBeforeCopyPanic                     Failpoint = goPanicFailpoint{"defragBeforeCopy", triggerDefrag{}, AnyMember}
+	DefragNonBlockingBeforeCopyPanic          Failpoint = goPanicFailpoint{"defragNonBlockingBeforeCopy", triggerDefrag{requireNonBlockingDefrag: true}, AnyMember}
+	DefragBeforeReplayPanic                   Failpoint = goPanicFailpoint{"defragBeforeReplay", triggerDefrag{requireNonBlockingDefrag: true}, AnyMember}
 	DefragBeforeRenamePanic                   Failpoint = goPanicFailpoint{"defragBeforeRename", triggerDefrag{}, AnyMember}
 	BeforeCommitPanic                         Failpoint = goPanicFailpoint{"beforeCommit", nil, AnyMember}
 	AfterCommitPanic                          Failpoint = goPanicFailpoint{"afterCommit", nil, AnyMember}

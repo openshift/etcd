@@ -52,6 +52,7 @@ import (
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3compactor"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3discovery"
 	"go.etcd.io/etcd/server/v3/features"
+	"go.etcd.io/etcd/server/v3/storage/backend"
 )
 
 const (
@@ -376,6 +377,11 @@ type Config struct {
 	WarningApplyDuration time.Duration `json:"warning-apply-duration"`
 	// BootstrapDefragThresholdMegabytes is the minimum number of megabytes needed to be freed for etcd server to
 	BootstrapDefragThresholdMegabytes uint `json:"bootstrap-defrag-threshold-megabytes"`
+	// DefragJournalMaxOps sets the maximum number of write operations buffered
+	// in the defrag journal before backpressure is applied to writers. Only
+	// effective when the NonBlockingDefrag feature gate is enabled. 0 means
+	// unlimited (no backpressure).
+	DefragJournalMaxOps int `json:"defrag-journal-max-ops"`
 	// WarningUnaryRequestDuration is the time duration after which a warning is generated if applying
 	// unary request takes more time than this value.
 	WarningUnaryRequestDuration time.Duration `json:"warning-unary-request-duration"`
@@ -567,9 +573,14 @@ func NewConfig() *Config {
 		LogRotationConfigJSON: DefaultLogRotationConfig,
 		EnableGRPCGateway:     true,
 
-		DowngradeCheckTime: DefaultDowngradeCheckTime,
-		MemoryMlock:        false,
-		MaxLearners:        membership.DefaultMaxLearners,
+		ExperimentalDowngradeCheckTime: DefaultDowngradeCheckTime,
+		DowngradeCheckTime:             DefaultDowngradeCheckTime,
+		MemoryMlock:                    false,
+		// TODO: delete in v3.7
+		ExperimentalMemoryMlock:             false,
+		ExperimentalStopGRPCServiceOnDefrag: false,
+		MaxLearners:                         membership.DefaultMaxLearners,
+		DefragJournalMaxOps:                 backend.DefaultDefragJournalMaxOps,
 
 		DistributedTracingAddress:     DefaultDistributedTracingAddress,
 		DistributedTracingServiceName: DefaultDistributedTracingServiceName,
@@ -761,6 +772,8 @@ func (cfg *Config) AddFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&cfg.WarningUnaryRequestDuration, "warning-unary-request-duration", cfg.WarningUnaryRequestDuration, "Time duration after which a warning is generated if a unary request takes more time.")
 	fs.BoolVar(&cfg.MemoryMlock, "memory-mlock", cfg.MemoryMlock, "Enable to enforce etcd pages (in particular bbolt) to stay in RAM.")
 	fs.UintVar(&cfg.BootstrapDefragThresholdMegabytes, "bootstrap-defrag-threshold-megabytes", 0, "Enable the defrag during etcd server bootstrap on condition that it will free at least the provided threshold of disk space. Needs to be set to non-zero value to take effect.")
+	fs.IntVar(&cfg.DefragJournalMaxOps, "defrag-journal-max-ops", backend.DefaultDefragJournalMaxOps, "Maximum number of write operations buffered in the non-blocking defrag journal before backpressure is applied. Requires --feature-gates=NonBlockingDefrag=true. Set to 0 for unlimited.")
+	// TODO: delete in v3.7
 	fs.IntVar(&cfg.MaxLearners, "max-learners", membership.DefaultMaxLearners, "Sets the maximum number of learners that can be available in the cluster membership.")
 	fs.Uint64Var(&cfg.SnapshotCatchUpEntries, "snapshot-catchup-entries", cfg.SnapshotCatchUpEntries, "Number of entries for a slow follower to catch up after compacting the raft storage entries.")
 

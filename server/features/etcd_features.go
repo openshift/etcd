@@ -35,6 +35,14 @@ const (
 	// of code conflicts because changes are more likely to be scattered
 	// across the file.
 
+	// NonBlockingDefrag enables a non-blocking defragmentation algorithm that
+	// allows writes to continue during the bulk data copy phase. A write journal
+	// captures mutations during the copy; only the journal replay and database
+	// swap require the write lock, reducing disruption from O(db_size) to
+	// O(writes_during_copy).
+	// owner: @dusk125
+	// alpha: v3.7
+	NonBlockingDefrag featuregate.Feature = "NonBlockingDefrag"
 	// StopGRPCServiceOnDefrag enables etcd gRPC service to stop serving client requests on defragmentation.
 	// owner: @chaochn47
 	// alpha: v3.6
@@ -86,17 +94,29 @@ const (
 	PriorityRequest featuregate.Feature = "PriorityRequest"
 )
 
-var DefaultEtcdServerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	StopGRPCServiceOnDefrag:      {Default: false, PreRelease: featuregate.Alpha},
-	InitialCorruptCheck:          {Default: false, PreRelease: featuregate.Alpha},
-	CompactHashCheck:             {Default: false, PreRelease: featuregate.Alpha},
-	TxnModeWriteWithSharedBuffer: {Default: true, PreRelease: featuregate.Beta},
-	LeaseCheckpoint:              {Default: false, PreRelease: featuregate.Alpha},
-	LeaseCheckpointPersist:       {Default: false, PreRelease: featuregate.Alpha},
-	SetMemberLocalAddr:           {Default: false, PreRelease: featuregate.Alpha},
-	FastLeaseKeepAlive:           {Default: true, PreRelease: featuregate.Beta},
-	PriorityRequest:              {Default: false, PreRelease: featuregate.Alpha},
-}
+var (
+	DefaultEtcdServerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
+		NonBlockingDefrag:            {Default: false, PreRelease: featuregate.Alpha},
+		StopGRPCServiceOnDefrag:      {Default: false, PreRelease: featuregate.Alpha},
+		InitialCorruptCheck:          {Default: false, PreRelease: featuregate.Alpha},
+		CompactHashCheck:             {Default: false, PreRelease: featuregate.Alpha},
+		TxnModeWriteWithSharedBuffer: {Default: true, PreRelease: featuregate.Beta},
+		LeaseCheckpoint:              {Default: false, PreRelease: featuregate.Alpha},
+		LeaseCheckpointPersist:       {Default: false, PreRelease: featuregate.Alpha},
+		SetMemberLocalAddr:           {Default: false, PreRelease: featuregate.Alpha},
+	}
+	// ExperimentalFlagToFeatureMap is the map from the cmd line flags of experimental features
+	// to their corresponding feature gates.
+	// Deprecated: Only add existing experimental features here. DO NOT use for new features.
+	ExperimentalFlagToFeatureMap = map[string]featuregate.Feature{
+		"experimental-stop-grpc-service-on-defrag":       StopGRPCServiceOnDefrag,
+		"experimental-initial-corrupt-check":             InitialCorruptCheck,
+		"experimental-compact-hash-check-enabled":        CompactHashCheck,
+		"experimental-txn-mode-write-with-shared-buffer": TxnModeWriteWithSharedBuffer,
+		"experimental-enable-lease-checkpoint":           LeaseCheckpoint,
+		"experimental-enable-lease-checkpoint-persist":   LeaseCheckpointPersist,
+	}
+)
 
 func NewDefaultServerFeatureGate(name string, lg *zap.Logger) featuregate.FeatureGate {
 	fg := featuregate.New(fmt.Sprintf("%sServerFeatureGate", name), lg)

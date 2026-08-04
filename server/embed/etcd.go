@@ -231,6 +231,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		WarningUnaryRequestDuration:       cfg.WarningUnaryRequestDuration,
 		MemoryMlock:                       cfg.MemoryMlock,
 		BootstrapDefragThresholdMegabytes: cfg.BootstrapDefragThresholdMegabytes,
+		DefragJournalMaxOps:               cfg.DefragJournalMaxOps,
 		MaxLearners:                       cfg.MaxLearners,
 		V2Deprecation:                     cfg.V2DeprecationEffective(),
 		LocalAddress:                      cfg.InferLocalAddr(),

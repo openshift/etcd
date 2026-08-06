@@ -22,6 +22,7 @@ import (
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/server/v3/features"
 	"go.etcd.io/etcd/tests/v3/framework/e2e"
 	"go.etcd.io/etcd/tests/v3/robustness/client"
 	"go.etcd.io/etcd/tests/v3/robustness/identity"
@@ -34,7 +35,9 @@ type trigger interface {
 	AvailabilityChecker
 }
 
-type triggerDefrag struct{}
+type triggerDefrag struct {
+	requireNonBlockingDefrag bool
+}
 
 func (t triggerDefrag) Trigger(ctx context.Context, _ *testing.T, member e2e.EtcdProcess, clus *e2e.EtcdProcessCluster, baseTime time.Time, ids identity.Provider) ([]report.ClientReport, error) {
 	cc, err := client.NewRecordingClient(member.EndpointsGRPC(), ids, baseTime)
@@ -49,7 +52,10 @@ func (t triggerDefrag) Trigger(ctx context.Context, _ *testing.T, member e2e.Etc
 	return nil, nil
 }
 
-func (t triggerDefrag) Available(e2e.EtcdProcessClusterConfig, e2e.EtcdProcess, traffic.Profile) bool {
+func (t triggerDefrag) Available(config e2e.EtcdProcessClusterConfig, _ e2e.EtcdProcess, _ traffic.Profile) bool {
+	if t.requireNonBlockingDefrag {
+		return config.ServerConfig.ServerFeatureGate != nil && config.ServerConfig.ServerFeatureGate.Enabled(features.NonBlockingDefrag)
+	}
 	return true
 }
 

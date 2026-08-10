@@ -58,6 +58,49 @@ number of the OCPBUGS ticket created in step (1).
 - Build the code with `make`
 - Test the code with `make test`
 
+## Downstream bbolt fork (openshift/bbolt)
+
+openshift/etcd currently carries a `go.mod` replace directive pointing
+`go.etcd.io/bbolt` to a patched fork at `openshift/bbolt`. This fork
+removes the `madvise(MADV_RANDOM)` call to fix a page cache regression
+on RHEL 10 kernels (OCPBUGS-103516).
+
+Each openshift/etcd release branch pins to a corresponding
+openshift/bbolt release branch (e.g. `release-5.0` → `release-5.0`).
+These branches are based on the specific bbolt tag that openshift/etcd
+uses for that release, with the patch applied on top. Do not rebase an
+existing openshift/bbolt release branch to a newer bbolt tag — that
+would break the corresponding openshift/etcd release.
+
+When rebasing openshift/etcd to a new upstream etcd that bumps the
+bbolt version for a new release, first check whether the new bbolt tag
+already includes the MADV_RANDOM fix
+(https://github.com/etcd-io/bbolt/issues/939).
+
+**If the new bbolt tag does NOT include the fix:**
+
+1. Create a new `release-X.Y` branch on `openshift/bbolt` from the new
+   bbolt tag (e.g. `release-5.1` from `v1.4.4`)
+2. Cherry-pick the MADV_RANDOM removal patch onto it
+3. Update the replace directive and run `go mod tidy` in each of the
+   four module directories. Use `go mod edit` with the raw commit hash
+   and `go mod tidy` will resolve the correct pseudo-version
+   (timestamp + hash):
+   ```bash
+   for dir in . server etcdutl tests; do
+     (cd $dir && go mod edit -replace go.etcd.io/bbolt=github.com/openshift/bbolt@<commit-hash> && go mod tidy)
+   done
+   ```
+
+The replace directive silently overrides whatever bbolt version is in
+`go.mod` — a version bump without updating the fork will appear to
+succeed but won't actually pick up the new bbolt code.
+
+**If the new bbolt tag DOES include the fix:**
+
+The fork is no longer needed. Drop the replace directive from all four
+`go.mod` files and remove this section from the rebase document.
+
 ## Payload testing
 
 After all the above are green and your PR pre-submits are too, you can start with payload testing. This is to ensure the nightly jobs won't break on etcd after the merge, they also test all of OpenShift (including upgrades) well enough. 

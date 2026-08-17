@@ -70,6 +70,10 @@ type Backend interface {
 	OpenReadTxN() int64
 	Defrag() error
 	ForceCommit()
+	// SetMmapAdvice toggles the bbolt mmap madvise hint (Linux only). random=true
+	// restores MADV_RANDOM (steady state); random=false sets MADV_NORMAL, intended
+	// to bracket a compaction pass. See go.etcd.io/bbolt DB.SetMmapAdvice.
+	SetMmapAdvice(random bool) error
 	Close() error
 
 	// SetTxPostLockInsideApplyHook sets a txPostLockInsideApplyHook.
@@ -367,6 +371,14 @@ func (b *backend) ConcurrentReadTx() ReadTx {
 // ForceCommit forces the current batching tx to commit.
 func (b *backend) ForceCommit() {
 	b.batchTx.Commit()
+}
+
+func (b *backend) SetMmapAdvice(random bool) error {
+	// RLock guards against defrag swapping b.db; bbolt serializes the actual
+	// mmap mutation internally via its mmaplock.
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.db.SetMmapAdvice(random)
 }
 
 func (b *backend) Snapshot() Snapshot {

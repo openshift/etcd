@@ -1,8 +1,8 @@
 module go.etcd.io/etcd/etcdctl/v3
 
-go 1.24
+go 1.24.0
 
-toolchain go1.24.7
+toolchain go1.24.11
 
 require (
 	github.com/bgentry/speakeasy v0.2.0
@@ -37,9 +37,9 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250303144028-a0af3efb3deb // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250303144028-a0af3efb3deb // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
@@ -60,3 +60,5 @@ replace (
 	go.etcd.io/etcd/v3 => ./FORBIDDEN_DEPENDENCY
 	go.etcd.io/tests/v3 => ./FORBIDDEN_DEPENDENCY
 )
+
+replace golang.org/x/net => github.com/openshift-sustaining/net v0.50.0-sec.3

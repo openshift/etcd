@@ -94,3 +94,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
+
+replace golang.org/x/net => github.com/openshift-sustaining/net v0.35.0-sec.3

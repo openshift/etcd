@@ -49,3 +49,5 @@ replace (
 	go.etcd.io/etcd/v3 => ./FORBIDDEN_DEPENDENCY
 	go.etcd.io/tests/v3 => ./FORBIDDEN_DEPENDENCY
 )
+
+replace golang.org/x/net => github.com/openshift-sustaining/net v0.35.0-sec.3

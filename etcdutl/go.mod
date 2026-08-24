@@ -76,3 +76,5 @@ require (
 	google.golang.org/grpc v1.59.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 )
+
+replace golang.org/x/net => github.com/openshift-sustaining/net v0.35.0-sec.3

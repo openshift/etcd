@@ -39,7 +39,7 @@ require (
 	golang.org/x/time v0.15.0
 	golang.org/x/tools v0.51.0
 	google.golang.org/grpc v1.83.2
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 )
 
 require (

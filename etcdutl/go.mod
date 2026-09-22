@@ -26,7 +26,7 @@ require (
 	go.etcd.io/etcd/server/v3 v3.7.3
 	go.etcd.io/raft/v3 v3.7.0
 	go.uber.org/zap v1.27.1
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	gotest.tools/v3 v3.5.2
 )
 

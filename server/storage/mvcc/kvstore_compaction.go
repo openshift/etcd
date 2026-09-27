@@ -36,6 +36,14 @@ func (s *store) scheduleCompaction(compactMainRev, prevCompactRev int64) (KeyVal
 	defer func() { dbCompactionKeysCounter.Add(float64(keyCompactions)) }()
 	defer func() { dbCompactionLast.Set(float64(time.Now().Unix())) }()
 
+	// Benchmark (OCPBUGS-103516 / bbolt#939): bracket the whole compaction pass
+	// with MADV_NORMAL and restore MADV_RANDOM afterwards. Set once per pass, not
+	// per batch, so the hint stays NORMAL across the batches and inter-batch
+	// sleeps. The defer covers both the normal and stop-signal returns. Errors are
+	// non-fatal (madvise is best-effort; Linux-only).
+	_ = s.b.SetMmapAdvice(false)
+	defer func() { _ = s.b.SetMmapAdvice(true) }()
+
 	end := make([]byte, 8)
 	binary.BigEndian.PutUint64(end, uint64(compactMainRev+1))
 

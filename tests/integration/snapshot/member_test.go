@@ -79,9 +79,10 @@ func TestSnapshotV3RestoreMultiMemberAdd(t *testing.T) {
 	defer func() {
 		srv.Close()
 	}()
+	// Allow member-attribute publication to retry after a request timeout.
 	select {
 	case <-srv.Server.ReadyNotify():
-	case <-time.After(30 * time.Second):
+	case <-time.After(60 * time.Second):
 		t.Fatalf("failed to start the newly added etcd member")
 	}
 

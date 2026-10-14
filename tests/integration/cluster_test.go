@@ -312,7 +312,8 @@ func TestIssue3699(t *testing.T) {
 
 	t.Logf("Expecting successful put...")
 	// try to participate in Cluster
-	ctx, cancel := context.WithTimeout(t.Context(), integration.RequestTimeout)
+	// The retained client may have accumulated gRPC reconnect backoff during deliberate downtime.
+	ctx, cancel := context.WithTimeout(t.Context(), 180*time.Second)
 	_, err := c.Members[0].Client.Put(ctx, "/foo", "bar")
 	require.NoErrorf(t, err, "unexpected error on Put")
 	cancel()

@@ -91,4 +91,4 @@ replace go.etcd.io/etcd => ./FORBIDDEN_DEPENDENCY
 
 replace go.etcd.io/tests/v3 => ./FORBIDDEN_DEPENDENCY
 
-replace go.etcd.io/bbolt => github.com/openshift/bbolt v0.0.0-20260806041816-148dcef86a15
+replace go.etcd.io/bbolt => github.com/hasbro17/bbolt v1.3.7-0.20260811212650-b0af58f3a325

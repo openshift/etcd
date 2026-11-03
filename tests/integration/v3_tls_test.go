@@ -80,12 +80,19 @@ func testTLSCipherSuites(t *testing.T, valid bool) {
 	}
 }
 
-func TestTLSClientCurvePreferencesValid(t *testing.T)    { testTLSCurvePreferences(t, true) }
-func TestTLSClientCurvePreferencesMismatch(t *testing.T) { testTLSCurvePreferences(t, false) }
+func TestTLSClientListenCurvePreferencesValid(t *testing.T) {
+	testTLSListenCurvePreferences(t, true)
+}
 
-// testTLSCurvePreferences ensures mismatching client-side curve preferences
-// fail TLS handshake with the server.
-func testTLSCurvePreferences(t *testing.T, valid bool) {
+func TestTLSClientListenCurvePreferencesMismatch(t *testing.T) {
+	testTLSListenCurvePreferences(t, false)
+}
+
+// testTLSListenCurvePreferences ensures the server enforces its configured
+// listen curve preferences, failing the TLS handshake when the client offers no
+// matching curve. Curve preferences only apply on the server (listener) side,
+// so the client's offered curves are set directly on its tls.Config.
+func testTLSListenCurvePreferences(t *testing.T, valid bool) {
 	integration.BeforeTest(t)
 
 	curves := []tls.CurveID{
@@ -94,18 +101,19 @@ func testTLSCurvePreferences(t *testing.T, valid bool) {
 		tls.CurveP384,
 		tls.CurveP521,
 	}
-	srvTLS, cliTLS := integration.TestTLSInfo, integration.TestTLSInfo
-	if valid {
-		srvTLS.CurvePreferences, cliTLS.CurvePreferences = curves, curves
-	} else {
-		srvTLS.CurvePreferences, cliTLS.CurvePreferences = curves[:2], curves[2:]
-	}
+	srvTLS := integration.TestTLSInfo
+	srvTLS.ListenCurvePreferences = curves[:2]
 
 	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 1, ClientTLS: &srvTLS})
 	defer clus.Terminate(t)
 
-	cc, err := cliTLS.ClientConfig()
+	cc, err := integration.TestTLSInfo.ClientConfig()
 	require.NoError(t, err)
+	if valid {
+		cc.CurvePreferences = curves[:2]
+	} else {
+		cc.CurvePreferences = curves[2:]
+	}
 	cli, cerr := integration.NewClient(t, clientv3.Config{
 		Endpoints:   []string{clus.Members[0].GRPCURL},
 		DialTimeout: time.Second,

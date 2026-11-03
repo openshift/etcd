@@ -235,7 +235,7 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 				}
 				curveIDs[i] = curveID
 			}
-			tlsInfo.CurvePreferences = curveIDs
+			tlsInfo.ListenCurvePreferences = curveIDs
 		}
 		if grpcProxyListenTLSMinVersion != "" {
 			version, err := tlsutil.GetTLSVersion(grpcProxyListenTLSMinVersion)

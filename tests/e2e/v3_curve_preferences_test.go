@@ -32,7 +32,7 @@ func TestCurlV3CurvePreferencesMismatch(t *testing.T) { testCurlV3CurvePreferenc
 func testCurlV3CurvePreferences(t *testing.T, valid bool) {
 	cc := e2e.NewConfigClientTLS()
 	cc.ClusterSize = 1
-	cc.ServerConfig.CurvePreferences = []string{"CurveP256"}
+	cc.ServerConfig.ListenCurvePreferences = []string{"CurveP256"}
 	testFunc := curvePreferencesTestValid
 	if !valid {
 		testFunc = curvePreferencesTestMismatch

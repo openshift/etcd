@@ -955,7 +955,7 @@ func TestTLSVersionMinMax(t *testing.T) {
 	}
 }
 
-func TestUpdateCurvePreferences(t *testing.T) {
+func TestUpdateListenCurvePreferences(t *testing.T) {
 	tests := []struct {
 		name            string
 		givenCurves     []string
@@ -999,14 +999,14 @@ func TestUpdateCurvePreferences(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			info := &transport.TLSInfo{CurvePreferences: tt.preset}
+			info := &transport.TLSInfo{ListenCurvePreferences: tt.preset}
 			err := updateCurvePreferences(info, tt.givenCurves)
 			if tt.expectError {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.expectedCurveID, info.CurvePreferences)
+			assert.Equal(t, tt.expectedCurveID, info.ListenCurvePreferences)
 		})
 	}
 }

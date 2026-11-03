@@ -165,9 +165,9 @@ type TLSInfo struct {
 	// Note that cipher suites are prioritized in the given order.
 	CipherSuites []uint16
 
-	// CurvePreferences is a list of supported elliptic curves (TLS key exchange groups) used in
-	// the TLS handshake. If empty, Go's default selection is used.
-	CurvePreferences []tls.CurveID
+	// ListenCurvePreferences is a list of supported elliptic curves (TLS key exchange groups)
+	// used in the TLS handshake. If empty, Go's default selection is used.
+	ListenCurvePreferences []tls.CurveID
 
 	// MinVersion is the minimum TLS version that is acceptable.
 	// If not set, the minimum version is TLS 1.2.
@@ -411,10 +411,6 @@ func (info TLSInfo) baseConfig() (*tls.Config, error) {
 		cfg.CipherSuites = info.CipherSuites
 	}
 
-	if len(info.CurvePreferences) > 0 {
-		cfg.CurvePreferences = info.CurvePreferences
-	}
-
 	// Client certificates may be verified by either an exact match on the CN,
 	// or a more general check of the CN and SANs.
 	var verifyCertificate func(*x509.Certificate) bool
@@ -538,6 +534,10 @@ func (info TLSInfo) ServerConfig() (*tls.Config, error) {
 	cfg, err := info.baseConfig()
 	if err != nil {
 		return nil, err
+	}
+
+	if len(info.ListenCurvePreferences) > 0 {
+		cfg.CurvePreferences = info.ListenCurvePreferences
 	}
 
 	if info.Logger == nil {

@@ -152,8 +152,8 @@ cipher-suites: [
   TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
 ]
 
-# Limit etcd to a specific set of tls curve preferences
-curve-preferences: [
+# Limit etcd's listeners to a specific set of tls curve preferences
+listen-curve-preferences: [
   X25519MLKEM768,
   X25519
 ]

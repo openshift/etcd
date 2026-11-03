@@ -228,8 +228,8 @@ Security:
     Minimum TLS version supported by etcd. Possible values: TLS1.2, TLS1.3.
   --tls-max-version ''
     Maximum TLS version supported by etcd. Possible values: TLS1.2, TLS1.3 (empty will be auto-populated by Go).
-  --curve-preferences ''
-    Comma-separated list of supported elliptic curves between client/server and peers (empty will be auto-populated by Go).
+  --listen-curve-preferences ''
+    Comma-separated list of supported elliptic curves (TLS key exchange groups) used in the TLS handshake. If empty, Go's default selection is used.
 
 Auth:
   --auth-token 'simple'

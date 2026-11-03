@@ -538,7 +538,7 @@ func configurePeerListeners(cfg *Config) (peers []*peerListener, err error) {
 	if err = updateCipherSuites(&cfg.PeerTLSInfo, cfg.CipherSuites); err != nil {
 		return nil, err
 	}
-	if err = updateCurvePreferences(&cfg.PeerTLSInfo, cfg.CurvePreferences); err != nil {
+	if err = updateCurvePreferences(&cfg.PeerTLSInfo, cfg.ListenCurvePreferences); err != nil {
 		return nil, err
 	}
 	if err = cfg.PeerSelfCert(); err != nil {
@@ -655,7 +655,7 @@ func configureClientListeners(cfg *Config) (sctxs map[string]*serveCtx, err erro
 	if err = updateCipherSuites(&cfg.ClientTLSInfo, cfg.CipherSuites); err != nil {
 		return nil, err
 	}
-	if err = updateCurvePreferences(&cfg.ClientTLSInfo, cfg.CurvePreferences); err != nil {
+	if err = updateCurvePreferences(&cfg.ClientTLSInfo, cfg.ListenCurvePreferences); err != nil {
 		return nil, err
 	}
 	if err = cfg.ClientSelfCert(); err != nil {

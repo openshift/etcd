@@ -228,6 +228,8 @@ Security:
     Minimum TLS version supported by etcd. Possible values: TLS1.2, TLS1.3.
   --tls-max-version ''
     Maximum TLS version supported by etcd. Possible values: TLS1.2, TLS1.3 (empty will be auto-populated by Go).
+  --curve-preferences ''
+    Comma-separated list of supported elliptic curves between client/server and peers (empty will be auto-populated by Go).
 
 Auth:
   --auth-token 'simple'
@@ -320,6 +322,8 @@ Experimental feature:
     Enable the defrag during etcd server bootstrap on condition that it will free at least the provided threshold of disk space. Needs to be set to non-zero value to take effect. Deprecated in v3.6 and will be decommissioned in v3.7. Use '--bootstrap-defrag-threshold-megabytes' instead.
   --bootstrap-defrag-threshold-megabytes
     Enable the defrag during etcd server bootstrap on condition that it will free at least the provided threshold of disk space. Needs to be set to non-zero value to take effect.
+  --defrag-journal-max-ops '50000'
+    Maximum number of write operations buffered in the non-blocking defrag journal before backpressure is applied. Requires --feature-gates=NonBlockingDefrag=true. Set to 0 for unlimited.
   --experimental-warning-unary-request-duration '300ms'
     Set time duration after which a warning is generated if a unary request takes more than this duration. Deprecated in v3.6 and will be decommissioned in v3.7. Use '--warning-unary-request-duration' instead.
   --max-learners '1'
@@ -346,6 +350,8 @@ Experimental feature:
 Unsafe feature:
   --force-new-cluster 'false'
     Force to create a new one-member cluster.
+  --force-new-cluster-bump-amount '0'
+    How much to increase the latest revision after --force-new-cluster.
   --unsafe-no-fsync 'false'
     Disables fsync, unsafe, will cause data loss.
 

@@ -27,3 +27,18 @@ func DefragLimitForTest() int {
 func CommitsForTest(b Backend) int64 {
 	return b.(*backend).Commits()
 }
+
+func SetDefragJournalMaxOpsForTest(b Backend, maxOps int) {
+	be := b.(*backend)
+	be.defragJournalMaxOps = maxOps
+}
+
+func SetNonBlockingDefragForTest(b Backend, enabled bool) {
+	be := b.(*backend)
+	be.nonBlockingDefrag = enabled
+}
+
+func SetNonBlockDefragCopyFailHookForTest(b Backend, hook func() error) {
+	be := b.(*backend)
+	be.nonBlockDefragCopyFailHook = hook
+}

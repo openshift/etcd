@@ -221,6 +221,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		PreVote:                           cfg.PreVote,
 		Logger:                            cfg.logger,
 		ForceNewCluster:                   cfg.ForceNewCluster,
+		ForceNewClusterBumpAmount:         cfg.ForceNewClusterBumpAmount,
 		EnableGRPCGateway:                 cfg.EnableGRPCGateway,
 		EnableDistributedTracing:          cfg.EnableDistributedTracing,
 		UnsafeNoFsync:                     cfg.UnsafeNoFsync,
@@ -232,6 +233,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		WarningUnaryRequestDuration:       cfg.WarningUnaryRequestDuration,
 		MemoryMlock:                       cfg.MemoryMlock,
 		BootstrapDefragThresholdMegabytes: cfg.BootstrapDefragThresholdMegabytes,
+		DefragJournalMaxOps:               cfg.DefragJournalMaxOps,
 		MaxLearners:                       cfg.MaxLearners,
 		V2Deprecation:                     cfg.V2DeprecationEffective(),
 		ExperimentalLocalAddress:          cfg.InferLocalAddr(),
@@ -536,6 +538,9 @@ func configurePeerListeners(cfg *Config) (peers []*peerListener, err error) {
 	if err = updateCipherSuites(&cfg.PeerTLSInfo, cfg.CipherSuites); err != nil {
 		return nil, err
 	}
+	if err = updateCurvePreferences(&cfg.PeerTLSInfo, cfg.CurvePreferences); err != nil {
+		return nil, err
+	}
 	if err = cfg.PeerSelfCert(); err != nil {
 		cfg.logger.Fatal("failed to get peer self-signed certs", zap.Error(err))
 	}
@@ -648,6 +653,9 @@ func (e *Etcd) servePeers() {
 
 func configureClientListeners(cfg *Config) (sctxs map[string]*serveCtx, err error) {
 	if err = updateCipherSuites(&cfg.ClientTLSInfo, cfg.CipherSuites); err != nil {
+		return nil, err
+	}
+	if err = updateCurvePreferences(&cfg.ClientTLSInfo, cfg.CurvePreferences); err != nil {
 		return nil, err
 	}
 	if err = cfg.ClientSelfCert(); err != nil {

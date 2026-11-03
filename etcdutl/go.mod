@@ -95,4 +95,4 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace go.etcd.io/bbolt => github.com/openshift/bbolt v0.0.0-20260806041816-148dcef86a15
+replace go.etcd.io/bbolt => github.com/hasbro17/bbolt v0.0.0-20260817210116-ce271e770d58

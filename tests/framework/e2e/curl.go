@@ -38,7 +38,6 @@ type CURLReq struct {
 	Header   string
 
 	Ciphers     string
-	Curves      string
 	HTTPVersion string
 
 	OutputFile string
@@ -94,10 +93,6 @@ func CURLPrefixArgs(clientURL string, cfg ClientConfig, CN bool, method string, 
 
 	if req.Ciphers != "" {
 		cmdArgs = append(cmdArgs, "--ciphers", req.Ciphers)
-	}
-
-	if req.Curves != "" {
-		cmdArgs = append(cmdArgs, "--curves", req.Curves)
 	}
 
 	if req.OutputFile != "" {

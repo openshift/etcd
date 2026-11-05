@@ -10,15 +10,9 @@ require (
 	github.com/golang/protobuf v1.5.4
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/stretchr/testify v1.11.1
-<<<<<<< HEAD
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d
 	google.golang.org/grpc v1.83.2
-	google.golang.org/protobuf v1.36.11
-=======
-	google.golang.org/genproto/googleapis/api v0.0.0-20251202230838-ff82c1b0f217
-	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.12
->>>>>>> release-5.0
 )
 
 require (

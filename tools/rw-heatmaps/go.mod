@@ -1,8 +1,8 @@
 module go.etcd.io/etcd/tools/rw-heatmaps/v3
 
-go 1.25.0
+go 1.26.0
 
-toolchain go1.25.11
+toolchain go1.26.10
 
 require (
 	github.com/spf13/cobra v1.10.2
@@ -21,6 +21,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/image v0.39.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
-	gonum.org/v1/gonum v0.16.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
+	gonum.org/v1/gonum v0.17.0 // indirect
 )

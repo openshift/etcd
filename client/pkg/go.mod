@@ -1,14 +1,14 @@
 module go.etcd.io/etcd/client/pkg/v3
 
-go 1.25.0
+go 1.26.0
 
-toolchain go1.25.11
+toolchain go1.26.10
 
 require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
-	golang.org/x/sys v0.45.0
+	golang.org/x/sys v0.49.0
 )
 
 require (

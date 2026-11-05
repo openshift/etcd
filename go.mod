@@ -35,13 +35,8 @@ require (
 	go.etcd.io/raft/v3 v3.6.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/time v0.9.0
-<<<<<<< HEAD
 	google.golang.org/grpc v1.83.2
-	google.golang.org/protobuf v1.36.11
-=======
-	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.12
->>>>>>> openshift-4.22
 )
 
 require (

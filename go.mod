@@ -21,6 +21,7 @@ require (
 	github.com/coreos/go-semver v0.3.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	go.etcd.io/bbolt v1.4.3
 	go.etcd.io/etcd/api/v3 v3.6.16
@@ -34,8 +35,13 @@ require (
 	go.etcd.io/raft/v3 v3.6.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/time v0.9.0
+<<<<<<< HEAD
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.11
+=======
+	google.golang.org/grpc v1.79.3
+	google.golang.org/protobuf v1.36.12
+>>>>>>> openshift-4.22
 )
 
 require (
@@ -76,7 +82,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
 	go.etcd.io/gofail v0.2.0 // indirect

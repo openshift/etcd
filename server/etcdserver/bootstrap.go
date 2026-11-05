@@ -42,6 +42,7 @@ import (
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3discovery"
 	"go.etcd.io/etcd/server/v3/etcdserver/cindex"
 	servererrors "go.etcd.io/etcd/server/v3/etcdserver/errors"
+	"go.etcd.io/etcd/server/v3/revbump"
 	serverstorage "go.etcd.io/etcd/server/v3/storage"
 	"go.etcd.io/etcd/server/v3/storage/backend"
 	"go.etcd.io/etcd/server/v3/storage/schema"
@@ -89,6 +90,13 @@ func bootstrap(cfg config.ServerConfig) (b *bootstrappedServer, err error) {
 		}
 		cfg.Logger.Info("Bootstrapping WAL from snapshot")
 		bwal = bootstrapWALFromSnapshot(cfg, backend.snapshot, backend.ci)
+
+		if cfg.ForceNewCluster && cfg.ForceNewClusterBumpAmount > 0 {
+			err = revbump.UnsafeModifyLastRevision(cfg.Logger, cfg.ForceNewClusterBumpAmount, backend.be)
+			if err != nil {
+				cfg.Logger.Fatal("failed to modify last revision", zap.Error(err))
+			}
+		}
 	}
 
 	cfg.Logger.Info("bootstrapping cluster")
@@ -588,6 +596,7 @@ func bootstrapWALFromSnapshot(cfg config.ServerConfig, snapshot *raftpb.Snapshot
 		entries := bwal.NewConfigChangeEntries()
 		// force commit config change entries
 		bwal.AppendAndCommitEntries(entries)
+
 		cfg.Logger.Info(
 			"forcing restart member",
 			zap.String("cluster-id", meta.clusterID.String()),

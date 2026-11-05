@@ -107,12 +107,9 @@ var checkDatascaleCfgMap = map[string]checkDatascaleCfg{
 // NewCheckCommand returns the cobra command for "check".
 func NewCheckCommand() *cobra.Command {
 	cc := &cobra.Command{
-		Use:   "check <subcommand>",
-		Short: "commands for checking properties of the etcd cluster",
+		Use:   "check <subcommand> is no longer supported in OpenShift. Performance analysis should be performed using metrics, please see the etcd dashboards",
+		Short: "command no longer supported in OpenShift",
 	}
-
-	cc.AddCommand(NewCheckPerfCommand())
-	cc.AddCommand(NewCheckDatascaleCommand())
 
 	return cc
 }

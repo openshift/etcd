@@ -52,6 +52,7 @@ import (
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3compactor"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3discovery"
 	"go.etcd.io/etcd/server/v3/features"
+	"go.etcd.io/etcd/server/v3/storage/backend"
 )
 
 const (
@@ -459,6 +460,11 @@ type Config struct {
 	ExperimentalBootstrapDefragThresholdMegabytes uint `json:"experimental-bootstrap-defrag-threshold-megabytes"`
 	// BootstrapDefragThresholdMegabytes is the minimum number of megabytes needed to be freed for etcd server to
 	BootstrapDefragThresholdMegabytes uint `json:"bootstrap-defrag-threshold-megabytes"`
+	// DefragJournalMaxOps sets the maximum number of write operations buffered
+	// in the defrag journal before backpressure is applied to writers. Only
+	// effective when the NonBlockingDefrag feature gate is enabled. 0 means
+	// unlimited (no backpressure).
+	DefragJournalMaxOps int `json:"defrag-journal-max-ops"`
 	// WarningUnaryRequestDuration is the time duration after which a warning is generated if applying
 	// unary request takes more time than this value.
 	WarningUnaryRequestDuration time.Duration `json:"warning-unary-request-duration"`
@@ -470,7 +476,8 @@ type Config struct {
 	MaxLearners int `json:"max-learners"`
 
 	// ForceNewCluster starts a new cluster even if previously started; unsafe.
-	ForceNewCluster bool `json:"force-new-cluster"`
+	ForceNewCluster           bool   `json:"force-new-cluster"`
+	ForceNewClusterBumpAmount uint64 `json:"force-new-cluster-bump-amount"`
 
 	EnablePprof           bool   `json:"enable-pprof"`
 	Metrics               string `json:"metrics"`
@@ -711,6 +718,7 @@ func NewConfig() *Config {
 		ExperimentalMemoryMlock:             false,
 		ExperimentalStopGRPCServiceOnDefrag: false,
 		MaxLearners:                         membership.DefaultMaxLearners,
+		DefragJournalMaxOps:                 backend.DefaultDefragJournalMaxOps,
 
 		ExperimentalTxnModeWriteWithSharedBuffer:  DefaultExperimentalTxnModeWriteWithSharedBuffer,
 		ExperimentalDistributedTracingAddress:     DefaultDistributedTracingAddress,
@@ -949,6 +957,7 @@ func (cfg *Config) AddFlags(fs *flag.FlagSet) {
 	// TODO: delete in v3.7
 	fs.UintVar(&cfg.ExperimentalBootstrapDefragThresholdMegabytes, "experimental-bootstrap-defrag-threshold-megabytes", 0, "Enable the defrag during etcd server bootstrap on condition that it will free at least the provided threshold of disk space. Needs to be set to non-zero value to take effect. It's deprecated, and will be decommissioned in v3.7. Use --bootstrap-defrag-threshold-megabytes instead.")
 	fs.UintVar(&cfg.BootstrapDefragThresholdMegabytes, "bootstrap-defrag-threshold-megabytes", 0, "Enable the defrag during etcd server bootstrap on condition that it will free at least the provided threshold of disk space. Needs to be set to non-zero value to take effect.")
+	fs.IntVar(&cfg.DefragJournalMaxOps, "defrag-journal-max-ops", backend.DefaultDefragJournalMaxOps, "Maximum number of write operations buffered in the non-blocking defrag journal before backpressure is applied. Requires --feature-gates=NonBlockingDefrag=true. Set to 0 for unlimited.")
 	// TODO: delete in v3.7
 	fs.IntVar(&cfg.MaxLearners, "max-learners", membership.DefaultMaxLearners, "Sets the maximum number of learners that can be available in the cluster membership.")
 	fs.Uint64Var(&cfg.ExperimentalSnapshotCatchUpEntries, "experimental-snapshot-catchup-entries", cfg.ExperimentalSnapshotCatchUpEntries, "Number of entries for a slow follower to catch up after compacting the raft storage entries. Deprecated in v3.6 and will be decommissioned in v3.7. Use --snapshot-catchup-entries instead.")
@@ -957,6 +966,7 @@ func (cfg *Config) AddFlags(fs *flag.FlagSet) {
 	// unsafe
 	fs.BoolVar(&cfg.UnsafeNoFsync, "unsafe-no-fsync", false, "Disables fsync, unsafe, will cause data loss.")
 	fs.BoolVar(&cfg.ForceNewCluster, "force-new-cluster", false, "Force to create a new one member cluster.")
+	fs.Uint64Var(&cfg.ForceNewClusterBumpAmount, "force-new-cluster-bump-amount", 0, "How much to increase the latest revision after --force-new-cluster.")
 
 	// featuregate
 	cfg.ServerFeatureGate.(featuregate.MutableFeatureGate).AddFlag(fs, ServerFeatureGateFlagName)

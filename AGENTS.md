@@ -28,12 +28,18 @@ See [docs/openshift-downstream.md](./docs/openshift-downstream.md) for details.
 
 ## Critical rules
 
-1. **Follow the commit-prefix convention.** Downstream commits are labeled so
-   rebases can carry or drop them: `UPSTREAM: <carry>` (temporary carry, hope to
-   upstream), `UPSTREAM: <drop>` (carry that will never go upstream),
-   `DOWNSTREAM: <carry>` (OpenShift-specific). Preserve these prefixes.
-2. **Rebase with the script, not by hand.** Use `openshift-hack/rebase.sh`; see
-   [REBASE.openshift.md](./REBASE.openshift.md).
+1. **Follow the commit-prefix convention.** Every downstream non-merge commit
+   starts with one of the openshift/kubernetes prefixes: `UPSTREAM: <carry>:`
+   (a persistent change, OpenShift-specific or waiting on upstream),
+   `UPSTREAM: <PR#>:` (a cherry-pick of that etcd-io/etcd pull request), or
+   `UPSTREAM: <drop>:` (only for the current branch, such as conflict
+   resolution, image updates, or reverting a carry). A dependency bump ahead
+   of upstream is a `<carry>`, not a `<drop>`. Older commits may use
+   `DOWNSTREAM:`; do not rewrite them. See
+   [REBASE.openshift.md](./REBASE.openshift.md#commit-message-prefixes).
+2. **Rebase the documented way.** Use `openshift-hack/rebase.sh` for patch
+   releases and the cherry-pick process for minor releases, and never force
+   push; see [REBASE.openshift.md](./REBASE.openshift.md).
 3. **Never edit generated code.** Edit the `.proto` and run `make genproto`;
    never hand-edit `*.pb.go`. Never edit `vendor/`.
 4. **Do not break the API.** Never remove or rename API fields; deprecate instead.

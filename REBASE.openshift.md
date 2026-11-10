@@ -214,6 +214,12 @@ A minor release rebase starts a new branch from the upstream tag, connects it to
 the OpenShift branch's history, and cherry-picks the carries that are still
 needed. This follows the openshift/kubernetes process.
 
+The steps below rebase `main`. To rebase a release branch that has already
+branched, such as `openshift-5.1`, use that branch instead of `main` in steps 2,
+4 and 7. If the same minor release was already rebased onto `main`, cherry-pick
+the commits from that rebase PR. They were already adapted to the new tag, so
+they should apply cleanly.
+
 1. Create a new OCPBUGS JIRA ticket, as for a patch release.
 2. List the commits to consider:
    ```

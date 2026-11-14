@@ -17,7 +17,6 @@
 package e2e
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -32,8 +31,7 @@ import (
 // Refer to https://github.com/etcd-io/etcd/issues/20340#issuecomment-3105037914.
 func TestReproduce20340(t *testing.T) {
 	e2e.BeforeTest(t)
-
-	ctx := context.Background()
+	ctx := t.Context()
 
 	epc, members := mustCreateNewClusterByPromotingMembers(t, e2e.CurrentVersion, 3)
 	defer func() {

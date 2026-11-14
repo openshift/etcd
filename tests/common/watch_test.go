@@ -31,7 +31,7 @@ func TestWatch(t *testing.T) {
 	watchTimeout := 1 * time.Second
 	for _, tc := range clusterTestCases() {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 			defer cancel()
 			clus := testRunner.NewCluster(ctx, t, config.WithClusterConfig(tc.config))
 
@@ -76,7 +76,7 @@ func TestWatch(t *testing.T) {
 					require.NotNilf(t, wch, "failed to watch %s", tt.watchKey)
 
 					for j := range tt.puts {
-						err := cc.Put(ctx, tt.puts[j].Key, tt.puts[j].Val, config.PutOptions{})
+						_, err := cc.Put(ctx, tt.puts[j].Key, tt.puts[j].Val, config.PutOptions{})
 						require.NoErrorf(t, err, "can't not put key %q, err: %s", tt.puts[j].Key, err)
 					}
 

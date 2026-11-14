@@ -22,6 +22,7 @@ import (
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/server/v3/features"
 	"go.etcd.io/etcd/tests/v3/framework/e2e"
 	"go.etcd.io/etcd/tests/v3/robustness/client"
 	"go.etcd.io/etcd/tests/v3/robustness/identity"
@@ -34,7 +35,9 @@ type trigger interface {
 	AvailabilityChecker
 }
 
-type triggerDefrag struct{}
+type triggerDefrag struct {
+	requireNonBlockingDefrag bool
+}
 
 func (t triggerDefrag) Trigger(ctx context.Context, _ *testing.T, member e2e.EtcdProcess, clus *e2e.EtcdProcessCluster, baseTime time.Time, ids identity.Provider) ([]report.ClientReport, error) {
 	cc, err := client.NewRecordingClient(member.EndpointsGRPC(), ids, baseTime)
@@ -49,7 +52,10 @@ func (t triggerDefrag) Trigger(ctx context.Context, _ *testing.T, member e2e.Etc
 	return nil, nil
 }
 
-func (t triggerDefrag) Available(e2e.EtcdProcessClusterConfig, e2e.EtcdProcess, traffic.Profile) bool {
+func (t triggerDefrag) Available(config e2e.EtcdProcessClusterConfig, _ e2e.EtcdProcess, _ traffic.Profile) bool {
+	if t.requireNonBlockingDefrag {
+		return config.ServerConfig.ServerFeatureGate != nil && config.ServerConfig.ServerFeatureGate.Enabled(features.NonBlockingDefrag)
+	}
 	return true
 }
 
@@ -75,31 +81,34 @@ func (t triggerCompact) Trigger(ctx context.Context, _ *testing.T, member e2e.Et
 		}
 		rev = resp.Header.Revision
 
-		if !t.multiBatchCompaction || rev > int64(clus.Cfg.ServerConfig.ExperimentalCompactionBatchLimit) {
+		if !t.multiBatchCompaction || rev > int64(clus.Cfg.ServerConfig.CompactionBatchLimit) {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	_, err = cc.Compact(ctx, rev)
+
+	reports := []report.ClientReport{cc.Report()}
+
 	if err != nil && !connectionError(err) {
-		return nil, fmt.Errorf("failed to compact: %w", err)
+		return reports, fmt.Errorf("failed to compact: %w", err)
 	}
-	return []report.ClientReport{cc.Report()}, nil
+	return reports, nil
 }
 
 func (t triggerCompact) Available(config e2e.EtcdProcessClusterConfig, _ e2e.EtcdProcess, profile traffic.Profile) bool {
-	if profile.ForbidCompaction {
+	if profile.Compaction != nil {
 		return false
 	}
-	// Since introduction of compaction into traffic, injecting compaction failpoints started interfeering with peer proxy.
+	// Since the introduction of compaction into traffic, injecting compaction failpoints started interfering with the peer proxy.
 	// TODO: Re-enable the peer proxy for compact failpoints when we confirm the root cause.
 	if config.PeerProxy {
 		return false
 	}
 	// For multiBatchCompaction we need to guarantee that there are enough revisions between two compaction requests.
-	// With addition of compaction requests to traffic this might be hard if experimental-compaction-batch-limit is too high.
+	// With addition of compaction requests to traffic this might be hard if -compaction-batch-limit is too high.
 	if t.multiBatchCompaction {
-		return config.ServerConfig.ExperimentalCompactionBatchLimit <= 10
+		return config.ServerConfig.CompactionBatchLimit <= 10
 	}
 	return true
 }

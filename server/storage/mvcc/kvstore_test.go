@@ -16,7 +16,6 @@ package mvcc
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
@@ -30,8 +29,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	"go.etcd.io/etcd/client/pkg/v3/testutil"
@@ -65,7 +67,7 @@ func TestStorePut(t *testing.T) {
 		ModRevision:    2,
 		Version:        1,
 	}
-	kvb, err := kv.Marshal()
+	kvb, err := proto.Marshal(&kv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +79,7 @@ func TestStorePut(t *testing.T) {
 
 		wrev    Revision
 		wkey    []byte
-		wkv     mvccpb.KeyValue
+		wkv     *mvccpb.KeyValue
 		wputrev Revision
 	}{
 		{
@@ -87,7 +89,7 @@ func TestStorePut(t *testing.T) {
 
 			Revision{Main: 2},
 			newTestRevBytes(Revision{Main: 2}),
-			mvccpb.KeyValue{
+			&mvccpb.KeyValue{
 				Key:            []byte("foo"),
 				Value:          []byte("bar"),
 				CreateRevision: 2,
@@ -104,7 +106,7 @@ func TestStorePut(t *testing.T) {
 
 			Revision{Main: 2},
 			newTestRevBytes(Revision{Main: 2}),
-			mvccpb.KeyValue{
+			&mvccpb.KeyValue{
 				Key:            []byte("foo"),
 				Value:          []byte("bar"),
 				CreateRevision: 2,
@@ -121,7 +123,7 @@ func TestStorePut(t *testing.T) {
 
 			Revision{Main: 3},
 			newTestRevBytes(Revision{Main: 3}),
-			mvccpb.KeyValue{
+			&mvccpb.KeyValue{
 				Key:            []byte("foo"),
 				Value:          []byte("bar"),
 				CreateRevision: 2,
@@ -145,7 +147,7 @@ func TestStorePut(t *testing.T) {
 
 		s.Put([]byte("foo"), []byte("bar"), lease.LeaseID(i+1))
 
-		data, err := tt.wkv.Marshal()
+		data, err := proto.Marshal(tt.wkv)
 		if err != nil {
 			t.Errorf("#%d: marshal err = %v, want nil", i, err)
 		}
@@ -181,14 +183,14 @@ func TestStorePut(t *testing.T) {
 func TestStoreRange(t *testing.T) {
 	lg := zaptest.NewLogger(t)
 	key := newTestRevBytes(Revision{Main: 2})
-	kv := mvccpb.KeyValue{
+	kv := &mvccpb.KeyValue{
 		Key:            []byte("foo"),
 		Value:          []byte("bar"),
 		CreateRevision: 1,
 		ModRevision:    2,
 		Version:        1,
 	}
-	kvb, err := kv.Marshal()
+	kvb, err := proto.Marshal(kv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,16 +201,16 @@ func TestStoreRange(t *testing.T) {
 		r    rangeResp
 	}{
 		{
-			indexRangeResp{[][]byte{[]byte("foo")}, []Revision{{Main: 2}}},
+			indexRangeResp{[][]byte{[]byte("foo")}, []Revision{{Main: 2}}, []Revision{{Main: 1}}, []int64{1}, 1},
 			rangeResp{[][]byte{key}, [][]byte{kvb}},
 		},
 		{
-			indexRangeResp{[][]byte{[]byte("foo"), []byte("foo1")}, []Revision{{Main: 2}, {Main: 3}}},
+			indexRangeResp{[][]byte{[]byte("foo"), []byte("foo1")}, []Revision{{Main: 2}, {Main: 3}}, []Revision{{Main: 2}, {Main: 3}}, []int64{1, 1}, 2},
 			rangeResp{[][]byte{key}, [][]byte{kvb}},
 		},
 	}
 
-	ro := RangeOptions{Limit: 1, Rev: 0, Count: false}
+	ro := RangeOptions{Limit: 1, Rev: 0, CountOnly: false}
 	for i, tt := range tests {
 		s := newFakeStore(lg)
 		b := s.b.(*fakeBackend)
@@ -218,11 +220,11 @@ func TestStoreRange(t *testing.T) {
 		b.tx.rangeRespc <- tt.r
 		fi.indexRangeRespc <- tt.idxr
 
-		ret, err := s.Range(context.TODO(), []byte("foo"), []byte("goo"), ro)
+		ret, err := s.Range(t.Context(), []byte("foo"), []byte("goo"), ro)
 		if err != nil {
 			t.Errorf("#%d: err = %v, want nil", i, err)
 		}
-		if w := []mvccpb.KeyValue{kv}; !reflect.DeepEqual(ret.KVs, w) {
+		if w := []*mvccpb.KeyValue{kv}; !cmp.Equal(ret.KVs, w, protocmp.Transform()) {
 			t.Errorf("#%d: kvs = %+v, want %+v", i, ret.KVs, w)
 		}
 		if ret.Rev != wrev {
@@ -261,7 +263,7 @@ func TestStoreDeleteRange(t *testing.T) {
 		ModRevision:    2,
 		Version:        1,
 	}
-	kvb, err := kv.Marshal()
+	kvb, err := proto.Marshal(&kv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +280,7 @@ func TestStoreDeleteRange(t *testing.T) {
 	}{
 		{
 			Revision{Main: 2},
-			indexRangeResp{[][]byte{[]byte("foo")}, []Revision{{Main: 2}}},
+			indexRangeResp{[][]byte{[]byte("foo")}, []Revision{{Main: 2}}, []Revision{{Main: 2}}, []int64{1}, 1},
 			rangeResp{[][]byte{key}, [][]byte{kvb}},
 
 			newTestBucketKeyBytes(newBucketKey(3, 0, true)),
@@ -301,9 +303,9 @@ func TestStoreDeleteRange(t *testing.T) {
 			t.Errorf("#%d: n = %d, want 1", i, n)
 		}
 
-		data, err := (&mvccpb.KeyValue{
+		data, err := proto.Marshal(&mvccpb.KeyValue{
 			Key: []byte("foo"),
-		}).Marshal()
+		})
 		if err != nil {
 			t.Errorf("#%d: marshal err = %v, want nil", i, err)
 		}
@@ -384,7 +386,7 @@ func TestStoreRestore(t *testing.T) {
 		ModRevision:    4,
 		Version:        1,
 	}
-	putkvb, err := putkv.Marshal()
+	putkvb, err := proto.Marshal(&putkv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +394,7 @@ func TestStoreRestore(t *testing.T) {
 	delkv := mvccpb.KeyValue{
 		Key: []byte("foo"),
 	}
-	delkvb, err := delkv.Marshal()
+	delkvb, err := proto.Marshal(&delkv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +471,7 @@ func TestRestoreDelete(t *testing.T) {
 	defer s.Close()
 	for i := 0; i < 20; i++ {
 		ks := fmt.Sprintf("foo-%d", i)
-		r, err := s.Range(context.TODO(), []byte(ks), nil, RangeOptions{})
+		r, err := s.Range(t.Context(), []byte(ks), nil, RangeOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -519,7 +521,7 @@ func TestRestoreContinueUnfinishedCompaction(t *testing.T) {
 			// wait for scheduled compaction to be finished
 			time.Sleep(100 * time.Millisecond)
 
-			if _, err := s.Range(context.TODO(), []byte("foo"), nil, RangeOptions{Rev: 1}); !errors.Is(err, ErrCompacted) {
+			if _, err := s.Range(t.Context(), []byte("foo"), nil, RangeOptions{Rev: 1}); !errors.Is(err, ErrCompacted) {
 				t.Errorf("range on compacted rev error = %v, want %v", err, ErrCompacted)
 			}
 			// check the key in backend is deleted
@@ -709,6 +711,36 @@ func TestHashKVZeroRevision(t *testing.T) {
 	}
 }
 
+// TestHashConcurrentWithRestore ensures that Hash does not race with Restore
+// replacing the backend. The race detector reports a failure if it does.
+func TestHashConcurrentWithRestore(t *testing.T) {
+	b, _ := betesting.NewDefaultTmpBackend(t)
+	s := NewStore(zaptest.NewLogger(t), b, &lease.FakeLessor{}, StoreConfig{})
+	s.Put([]byte("foo"), []byte("bar"), lease.NoLease)
+
+	newBackend, _ := betesting.NewDefaultTmpBackend(t)
+	s2 := NewStore(zaptest.NewLogger(t), newBackend, &lease.FakeLessor{}, StoreConfig{})
+	s2.Put([]byte("foo"), []byte("bar2"), lease.NoLease)
+	s2.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if _, _, err := s.HashStorage().Hash(); err != nil {
+			t.Error(err)
+		}
+	}()
+	err := s.Restore(newBackend)
+	wg.Wait()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cleanup(s, newBackend)
+	b.Close()
+}
+
 func TestTxnPut(t *testing.T) {
 	// assign arbitrary size
 	bytesN := 30
@@ -756,37 +788,37 @@ func TestConcurrentReadNotBlockingWrite(t *testing.T) {
 
 	// readTx2 simulates a short read request
 	readTx2 := s.Read(ConcurrentReadTxMode, traceutil.TODO())
-	ro := RangeOptions{Limit: 1, Rev: 0, Count: false}
-	ret, err := readTx2.Range(context.TODO(), []byte("foo"), nil, ro)
+	ro := RangeOptions{Limit: 1, Rev: 0, CountOnly: false}
+	ret, err := readTx2.Range(t.Context(), []byte("foo"), nil, ro)
 	if err != nil {
 		t.Fatalf("failed to range: %v", err)
 	}
 	// readTx2 should see the result of new write
-	w := mvccpb.KeyValue{
+	w := &mvccpb.KeyValue{
 		Key:            []byte("foo"),
 		Value:          []byte("newBar"),
 		CreateRevision: 2,
 		ModRevision:    3,
 		Version:        2,
 	}
-	if !reflect.DeepEqual(ret.KVs[0], w) {
+	if !cmp.Equal(ret.KVs[0], w, protocmp.Transform()) {
 		t.Fatalf("range result = %+v, want = %+v", ret.KVs[0], w)
 	}
 	readTx2.End()
 
-	ret, err = readTx1.Range(context.TODO(), []byte("foo"), nil, ro)
+	ret, err = readTx1.Range(t.Context(), []byte("foo"), nil, ro)
 	if err != nil {
 		t.Fatalf("failed to range: %v", err)
 	}
 	// readTx1 should not see the result of new write
-	w = mvccpb.KeyValue{
+	w = &mvccpb.KeyValue{
 		Key:            []byte("foo"),
 		Value:          []byte("bar"),
 		CreateRevision: 2,
 		ModRevision:    2,
 		Version:        1,
 	}
-	if !reflect.DeepEqual(ret.KVs[0], w) {
+	if !cmp.Equal(ret.KVs[0], w, protocmp.Transform()) {
 		t.Fatalf("range result = %+v, want = %+v", ret.KVs[0], w)
 	}
 	readTx1.End()
@@ -841,7 +873,7 @@ func TestConcurrentReadTxAndWrite(t *testing.T) {
 			tx := s.Read(ConcurrentReadTxMode, traceutil.TODO())
 			mu.Unlock()
 			// get all keys in backend store, and compare with wKVs
-			ret, err := tx.Range(context.TODO(), []byte("\x00000000"), []byte("\xffffffff"), RangeOptions{})
+			ret, err := tx.Range(t.Context(), []byte("\x00000000"), []byte("\xffffffff"), RangeOptions{})
 			tx.End()
 			if err != nil {
 				t.Errorf("failed to range keys: %v", err)
@@ -1012,8 +1044,11 @@ type indexGetResp struct {
 }
 
 type indexRangeResp struct {
-	keys [][]byte
-	revs []Revision
+	keys     [][]byte
+	revs     []Revision
+	creates  []Revision
+	versions []int64
+	total    int
 }
 
 type indexRangeEventsResp struct {
@@ -1028,8 +1063,8 @@ type fakeIndex struct {
 	indexCompactRespc     chan map[Revision]struct{}
 }
 
-func (i *fakeIndex) Revisions(key, end []byte, atRev int64, limit int) ([]Revision, int) {
-	_, rev := i.Range(key, end, atRev)
+func (i *fakeIndex) Revisions(key, end []byte, atRev int64, limit int, withTotalCount bool) ([]Revision, int) {
+	_, rev, _, _, _ := i.Range(key, end, atRev, limit, withTotalCount)
 	if len(rev) >= limit {
 		rev = rev[:limit]
 	}
@@ -1037,7 +1072,7 @@ func (i *fakeIndex) Revisions(key, end []byte, atRev int64, limit int) ([]Revisi
 }
 
 func (i *fakeIndex) CountRevisions(key, end []byte, atRev int64) int {
-	_, rev := i.Range(key, end, atRev)
+	_, rev, _, _, _ := i.Range(key, end, atRev, 0, true)
 	return len(rev)
 }
 
@@ -1047,10 +1082,10 @@ func (i *fakeIndex) Get(key []byte, atRev int64) (rev, created Revision, ver int
 	return r.rev, r.created, r.ver, r.err
 }
 
-func (i *fakeIndex) Range(key, end []byte, atRev int64) ([][]byte, []Revision) {
+func (i *fakeIndex) Range(key, end []byte, atRev int64, limit int, withTotalCount bool) (keys [][]byte, modifies, creates []Revision, versions []int64, total int) {
 	i.Recorder.Record(testutil.Action{Name: "range", Params: []any{key, end, atRev}})
 	r := <-i.indexRangeRespc
-	return r.keys, r.revs
+	return r.keys, r.revs, r.creates, r.versions, r.total
 }
 
 func (i *fakeIndex) Put(key []byte, rev Revision) {

@@ -166,7 +166,7 @@ func TestStatusWithRootAuth(t *testing.T) {
 }
 
 func TestStatusWithUserAuth(t *testing.T) {
-	testStatusWithAuth(t, false, true, WithAuth("user0", "user0Pass"))
+	testStatusWithAuth(t, false, false, WithAuth("user0", "user0Pass"))
 }
 
 func testStatusWithAuth(t *testing.T, expectConnectionError, expectOperationError bool, opts ...config.ClientOption) {
@@ -203,7 +203,7 @@ func setupAuthForMaintenanceTest(c intf.Client) error {
 
 func testMaintenanceOperationWithAuth(t *testing.T, expectConnectError, expectOperationError bool, f func(context.Context, intf.Client) error, opts ...config.ClientOption) {
 	testRunner.BeforeTest(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	clus := testRunner.NewCluster(ctx, t)

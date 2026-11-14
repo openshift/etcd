@@ -43,7 +43,7 @@ type cluster struct {
 	commitC            []<-chan *commit
 	errorC             []<-chan error
 	proposeC           []chan string
-	confChangeC        []chan raftpb.ConfChange
+	confChangeC        []chan *raftpb.ConfChange
 	snapshotTriggeredC []<-chan struct{}
 }
 
@@ -59,7 +59,7 @@ func newCluster(n int) *cluster {
 		commitC:            make([]<-chan *commit, len(peers)),
 		errorC:             make([]<-chan error, len(peers)),
 		proposeC:           make([]chan string, len(peers)),
-		confChangeC:        make([]chan raftpb.ConfChange, len(peers)),
+		confChangeC:        make([]chan *raftpb.ConfChange, len(peers)),
 		snapshotTriggeredC: make([]<-chan struct{}, len(peers)),
 	}
 
@@ -67,7 +67,7 @@ func newCluster(n int) *cluster {
 		os.RemoveAll(fmt.Sprintf("raftexample-%d", i+1))
 		os.RemoveAll(fmt.Sprintf("raftexample-%d-snap", i+1))
 		clus.proposeC[i] = make(chan string, 1)
-		clus.confChangeC[i] = make(chan raftpb.ConfChange, 1)
+		clus.confChangeC[i] = make(chan *raftpb.ConfChange, 1)
 		fn, snapshotTriggeredC := getSnapshotFn()
 		clus.snapshotTriggeredC[i] = snapshotTriggeredC
 		clus.commitC[i], clus.errorC[i], _ = newRaftNode(i+1, clus.peers, false, fn, clus.proposeC[i], clus.confChangeC[i])
@@ -155,14 +155,12 @@ func TestCloseProposerInflight(t *testing.T) {
 	defer clus.closeNoErrors(t)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
 
 	// some inflight ops
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		clus.proposeC[0] <- "foo"
 		clus.proposeC[0] <- "bar"
-	}()
+	})
 
 	// wait for one message
 	if c, ok := <-clus.commitC[0]; !ok || c.data[0] != "foo" {
@@ -178,7 +176,7 @@ func TestPutAndGetKeyValue(t *testing.T) {
 	proposeC := make(chan string)
 	defer close(proposeC)
 
-	confChangeC := make(chan raftpb.ConfChange)
+	confChangeC := make(chan *raftpb.ConfChange)
 	defer close(confChangeC)
 
 	var kvs *kvstore
@@ -234,16 +232,16 @@ func TestAddNewNode(t *testing.T) {
 	}()
 
 	newNodeURL := "http://127.0.0.1:10004"
-	clus.confChangeC[0] <- raftpb.ConfChange{
-		Type:    raftpb.ConfChangeAddNode,
-		NodeID:  4,
+	clus.confChangeC[0] <- &raftpb.ConfChange{
+		Type:    raftpb.ConfChangeAddNode.Enum(),
+		NodeId:  new(uint64(4)),
 		Context: []byte(newNodeURL),
 	}
 
 	proposeC := make(chan string)
 	defer close(proposeC)
 
-	confChangeC := make(chan raftpb.ConfChange)
+	confChangeC := make(chan *raftpb.ConfChange)
 	defer close(confChangeC)
 
 	newRaftNode(4, append(clus.peers, newNodeURL), true, nil, proposeC, confChangeC)

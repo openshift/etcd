@@ -280,7 +280,7 @@ func TestUserChangePassword(t *testing.T) {
 	as, tearDown := setupAuthStore(t)
 	defer tearDown(t)
 
-	ctx1 := context.WithValue(context.WithValue(context.TODO(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
+	ctx1 := context.WithValue(context.WithValue(t.Context(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
 	_, err := as.Authenticate(ctx1, "foo", "bar")
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +291,7 @@ func TestUserChangePassword(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx2 := context.WithValue(context.WithValue(context.TODO(), AuthenticateParamIndex{}, uint64(2)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
+	ctx2 := context.WithValue(context.WithValue(t.Context(), AuthenticateParamIndex{}, uint64(2)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
 	_, err = as.Authenticate(ctx2, "foo", "baz")
 	if err != nil {
 		t.Fatal(err)
@@ -380,7 +380,7 @@ func TestIsOpPermitted(t *testing.T) {
 	}
 
 	perm := &authpb.Permission{
-		PermType: authpb.WRITE,
+		PermType: authpb.Permission_WRITE,
 		Key:      []byte("Keys"),
 		RangeEnd: []byte("RangeEnd"),
 	}
@@ -473,7 +473,7 @@ func TestRoleGrantPermission(t *testing.T) {
 	}
 
 	perm := &authpb.Permission{
-		PermType: authpb.WRITE,
+		PermType: authpb.Permission_WRITE,
 		Key:      []byte("Keys"),
 		RangeEnd: []byte("RangeEnd"),
 	}
@@ -526,7 +526,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "valid range",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte("Keys"),
 				RangeEnd: []byte("RangeEnd"),
 			},
@@ -535,7 +535,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "invalid range: nil key",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      nil,
 				RangeEnd: []byte("RangeEnd"),
 			},
@@ -544,7 +544,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "valid range: single key",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte("Keys"),
 				RangeEnd: nil,
 			},
@@ -553,7 +553,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "valid range: single key",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte("Keys"),
 				RangeEnd: []byte{},
 			},
@@ -562,7 +562,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "invalid range: empty (Key == RangeEnd)",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte("a"),
 				RangeEnd: []byte("a"),
 			},
@@ -571,7 +571,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "invalid range: empty (Key > RangeEnd)",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte("b"),
 				RangeEnd: []byte("a"),
 			},
@@ -580,7 +580,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "invalid range: length of key is 0",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte(""),
 				RangeEnd: []byte("a"),
 			},
@@ -589,7 +589,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "invalid range: length of key is 0",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte(""),
 				RangeEnd: []byte(""),
 			},
@@ -598,7 +598,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "invalid range: length of key is 0",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte(""),
 				RangeEnd: []byte{0x00},
 			},
@@ -607,7 +607,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "valid range: single key permission for []byte{0x00}",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte{0x00},
 				RangeEnd: []byte(""),
 			},
@@ -616,7 +616,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "valid range: \"a\" or larger keys",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte("a"),
 				RangeEnd: []byte{0x00},
 			},
@@ -625,7 +625,7 @@ func TestRoleGrantInvalidPermission(t *testing.T) {
 		{
 			name: "valid range: the entire keys",
 			perm: &authpb.Permission{
-				PermType: authpb.WRITE,
+				PermType: authpb.Permission_WRITE,
 				Key:      []byte{0x00},
 				RangeEnd: []byte{0x00},
 			},
@@ -652,7 +652,7 @@ func TestRootRoleGrantPermission(t *testing.T) {
 	defer tearDown(t)
 
 	perm := &authpb.Permission{
-		PermType: authpb.WRITE,
+		PermType: authpb.Permission_WRITE,
 		Key:      []byte("Keys"),
 		RangeEnd: []byte("RangeEnd"),
 	}
@@ -671,7 +671,7 @@ func TestRootRoleGrantPermission(t *testing.T) {
 
 	// whatever grant permission to root, it always return root permission.
 	expectPerm := &authpb.Permission{
-		PermType: authpb.READWRITE,
+		PermType: authpb.Permission_READWRITE,
 		Key:      []byte{},
 		RangeEnd: []byte{0},
 	}
@@ -689,7 +689,7 @@ func TestRoleRevokePermission(t *testing.T) {
 	}
 
 	perm := &authpb.Permission{
-		PermType: authpb.WRITE,
+		PermType: authpb.Permission_WRITE,
 		Key:      []byte("Keys"),
 		RangeEnd: []byte("RangeEnd"),
 	}
@@ -746,7 +746,7 @@ func TestUserRevokePermission(t *testing.T) {
 	}
 
 	perm := &authpb.Permission{
-		PermType: authpb.WRITE,
+		PermType: authpb.Permission_WRITE,
 		Key:      []byte("WriteKeyBegin"),
 		RangeEnd: []byte("WriteKeyEnd"),
 	}
@@ -811,38 +811,38 @@ func TestAuthInfoFromCtx(t *testing.T) {
 	as, tearDown := setupAuthStore(t)
 	defer tearDown(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ai, err := as.AuthInfoFromCtx(ctx)
 	if err != nil && ai != nil {
 		t.Errorf("expected (nil, nil), got (%v, %v)", ai, err)
 	}
 
 	// as if it came from RPC
-	ctx = metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{"tokens": "dummy"}))
+	ctx = metadata.NewIncomingContext(t.Context(), metadata.New(map[string]string{"tokens": "dummy"}))
 	ai, err = as.AuthInfoFromCtx(ctx)
 	if err != nil && ai != nil {
 		t.Errorf("expected (nil, nil), got (%v, %v)", ai, err)
 	}
 
-	ctx = context.WithValue(context.WithValue(context.TODO(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
+	ctx = context.WithValue(context.WithValue(t.Context(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
 	resp, err := as.Authenticate(ctx, "foo", "bar")
 	if err != nil {
 		t.Error(err)
 	}
 
-	ctx = metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{rpctypes.TokenFieldNameGRPC: "Invalid Token"}))
+	ctx = metadata.NewIncomingContext(t.Context(), metadata.New(map[string]string{rpctypes.TokenFieldNameGRPC: "Invalid Token"}))
 	_, err = as.AuthInfoFromCtx(ctx)
 	if !errors.Is(err, ErrInvalidAuthToken) {
 		t.Errorf("expected %v, got %v", ErrInvalidAuthToken, err)
 	}
 
-	ctx = metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{rpctypes.TokenFieldNameGRPC: "Invalid.Token"}))
+	ctx = metadata.NewIncomingContext(t.Context(), metadata.New(map[string]string{rpctypes.TokenFieldNameGRPC: "Invalid.Token"}))
 	_, err = as.AuthInfoFromCtx(ctx)
 	if !errors.Is(err, ErrInvalidAuthToken) {
 		t.Errorf("expected %v, got %v", ErrInvalidAuthToken, err)
 	}
 
-	ctx = metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{rpctypes.TokenFieldNameGRPC: resp.Token}))
+	ctx = metadata.NewIncomingContext(t.Context(), metadata.New(map[string]string{rpctypes.TokenFieldNameGRPC: resp.Token}))
 	ai, err = as.AuthInfoFromCtx(ctx)
 	if err != nil {
 		t.Error(err)
@@ -850,6 +850,11 @@ func TestAuthInfoFromCtx(t *testing.T) {
 	if ai.Username != "foo" {
 		t.Errorf("expected %v, got %v", "foo", ai.Username)
 	}
+
+	ctx = metadata.NewIncomingContext(t.Context(), metadata.New(map[string]string{rpctypes.TokenFieldNameGRPC: "Bearer " + resp.Token}))
+	ai, err = as.AuthInfoFromCtx(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", ai.Username)
 }
 
 func TestAuthDisable(t *testing.T) {
@@ -857,7 +862,7 @@ func TestAuthDisable(t *testing.T) {
 	defer tearDown(t)
 
 	as.AuthDisable()
-	ctx := context.WithValue(context.WithValue(context.TODO(), AuthenticateParamIndex{}, uint64(2)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
+	ctx := context.WithValue(context.WithValue(t.Context(), AuthenticateParamIndex{}, uint64(2)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
 	_, err := as.Authenticate(ctx, "foo", "bar")
 	if !errors.Is(err, ErrAuthNotEnabled) {
 		t.Errorf("expected %v, got %v", ErrAuthNotEnabled, err)
@@ -879,7 +884,7 @@ func TestIsAuthEnabled(t *testing.T) {
 	as.AuthEnable()
 
 	status := as.IsAuthEnabled()
-	ctx := context.WithValue(context.WithValue(context.TODO(), AuthenticateParamIndex{}, uint64(2)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
+	ctx := context.WithValue(context.WithValue(t.Context(), AuthenticateParamIndex{}, uint64(2)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
 	_, _ = as.Authenticate(ctx, "foo", "bar")
 	if status != true {
 		t.Errorf("expected %v, got %v", true, false)
@@ -907,7 +912,7 @@ func TestAuthInfoFromCtxRace(t *testing.T) {
 	donec := make(chan struct{})
 	go func() {
 		defer close(donec)
-		ctx := metadata.NewIncomingContext(context.Background(), metadata.New(map[string]string{rpctypes.TokenFieldNameGRPC: "test"}))
+		ctx := metadata.NewIncomingContext(t.Context(), metadata.New(map[string]string{rpctypes.TokenFieldNameGRPC: "test"}))
 		as.AuthInfoFromCtx(ctx)
 	}()
 	as.UserAdd(&pb.AuthUserAddRequest{Name: "test", Options: &authpb.UserAddOptions{NoPassword: false}})
@@ -1025,7 +1030,7 @@ func TestHammerSimpleAuthenticate(t *testing.T) {
 			go func(user string) {
 				defer wg.Done()
 				token := fmt.Sprintf("%s(%d)", user, i)
-				ctx := context.WithValue(context.WithValue(context.TODO(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, token)
+				ctx := context.WithValue(context.WithValue(t.Context(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, token)
 				if _, err := as.Authenticate(ctx, user, "123"); err != nil {
 					t.Error(err)
 				}
@@ -1106,7 +1111,7 @@ func testAuthInfoFromCtxWithRoot(t *testing.T, opts string) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = as.WithRoot(ctx)
 
 	ai, aerr := as.AuthInfoFromCtx(ctx)
@@ -1130,7 +1135,7 @@ func TestUserNoPasswordAdd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.WithValue(context.TODO(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
+	ctx := context.WithValue(context.WithValue(t.Context(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
 	_, err = as.Authenticate(ctx, username, "")
 	require.ErrorIsf(t, err, ErrAuthFailed, "expected %v, got %v", ErrAuthFailed, err)
 }
@@ -1150,7 +1155,7 @@ func TestUserChangePasswordWithOldLog(t *testing.T) {
 	as, tearDown := setupAuthStore(t)
 	defer tearDown(t)
 
-	ctx1 := context.WithValue(context.WithValue(context.TODO(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
+	ctx1 := context.WithValue(context.WithValue(t.Context(), AuthenticateParamIndex{}, uint64(1)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
 	_, err := as.Authenticate(ctx1, "foo", "bar")
 	if err != nil {
 		t.Fatal(err)
@@ -1161,7 +1166,7 @@ func TestUserChangePasswordWithOldLog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx2 := context.WithValue(context.WithValue(context.TODO(), AuthenticateParamIndex{}, uint64(2)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
+	ctx2 := context.WithValue(context.WithValue(t.Context(), AuthenticateParamIndex{}, uint64(2)), AuthenticateParamSimpleTokenPrefix{}, "dummy")
 	_, err = as.Authenticate(ctx2, "foo", "baz")
 	if err != nil {
 		t.Fatal(err)

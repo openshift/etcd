@@ -15,18 +15,22 @@
 package report
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
-	"go.etcd.io/etcd/pkg/v3/pbutil"
+	"go.etcd.io/etcd/client/pkg/v3/fileutil"
 	"go.etcd.io/etcd/server/v3/storage/datadir"
 	"go.etcd.io/etcd/server/v3/storage/wal"
 	"go.etcd.io/etcd/server/v3/storage/wal/walpb"
@@ -46,7 +50,7 @@ func LoadClusterPersistedRequests(lg *zap.Logger, path string) ([]model.EtcdRequ
 			dataDirs = append(dataDirs, filepath.Join(path, file.Name()))
 		}
 	}
-	return PersistedRequestsDirs(lg, dataDirs)
+	return PersistedRequests(lg, dataDirs)
 }
 
 func PersistedRequestsCluster(lg *zap.Logger, cluster *e2e.EtcdProcessCluster) ([]model.EtcdRequest, error) {
@@ -54,70 +58,157 @@ func PersistedRequestsCluster(lg *zap.Logger, cluster *e2e.EtcdProcessCluster) (
 	for _, proc := range cluster.Procs {
 		dataDirs = append(dataDirs, memberDataDir(proc))
 	}
-	return PersistedRequestsDirs(lg, dataDirs)
+	return PersistedRequests(lg, dataDirs)
 }
 
-func PersistedRequestsDirs(lg *zap.Logger, dataDirs []string) ([]model.EtcdRequest, error) {
-	persistedRequests := []model.EtcdRequest{}
-	// Allow failure in minority of etcd cluster.
-	// 0 failures in 1 node cluster, 1 failure in 3 node cluster
-	allowedFailures := len(dataDirs) / 2
-	for _, dir := range dataDirs {
-		memberRequests, err := requestsPersistedInWAL(lg, dir)
+func PersistedRequests(lg *zap.Logger, dataDirs []string) ([]model.EtcdRequest, error) {
+	if len(dataDirs) == 0 {
+		return nil, errors.New("no data dirs")
+	}
+	entriesPersistedInWAL := make([][]*raftpb.Entry, len(dataDirs))
+	var minCommitIndex uint64 = math.MaxUint64
+	for i, dir := range dataDirs {
+		state, entries, err := ReadWAL(lg, dir)
 		if err != nil {
-			if allowedFailures < 1 {
-				return nil, err
-			}
-			allowedFailures--
+			lg.Error("Failed to read WAL", zap.Error(err), zap.String("data-dir", dir))
 			continue
 		}
-		minLength := min(len(persistedRequests), len(memberRequests))
-		if diff := cmp.Diff(memberRequests[:minLength], persistedRequests[:minLength]); diff != "" {
-			return nil, fmt.Errorf("unexpected differences between wal entries, diff:\n%s", diff)
+		minCommitIndex = min(minCommitIndex, state.GetCommit())
+		entriesPersistedInWAL[i] = entries
+	}
+	entries, err := mergeMembersEntries(minCommitIndex, entriesPersistedInWAL)
+	if err != nil {
+		return nil, err
+	}
+	persistedRequests := make([]model.EtcdRequest, 0, len(entries))
+	for _, e := range entries {
+		if e.GetType() != raftpb.EntryNormal {
+			continue
 		}
-		if len(memberRequests) > len(persistedRequests) {
-			persistedRequests = memberRequests
+		request, err := parseEntryNormal(e)
+		if err != nil {
+			return nil, err
+		}
+		if request != nil {
+			persistedRequests = append(persistedRequests, *request)
 		}
 	}
 	return persistedRequests, nil
 }
 
-func requestsPersistedInWAL(lg *zap.Logger, dataDir string) ([]model.EtcdRequest, error) {
-	_, ents, err := ReadWAL(lg, dataDir)
-	if err != nil {
-		return nil, err
-	}
-	requests := make([]model.EtcdRequest, 0, len(ents))
-	for _, ent := range ents {
-		if ent.Type != raftpb.EntryNormal || len(ent.Data) == 0 {
-			continue
-		}
-		request, err := parseEntryNormal(ent)
-		if err != nil {
-			return nil, err
-		}
-		if request != nil {
-			requests = append(requests, *request)
+func mergeMembersEntries(minCommitIndex uint64, memberEntries [][]*raftpb.Entry) ([]*raftpb.Entry, error) {
+	for _, entries := range memberEntries {
+		var lastIndex uint64
+		for _, e := range entries {
+			if e.GetIndex() <= lastIndex {
+				return nil, fmt.Errorf("raft index should increase, got: %d, previous: %d", e.GetIndex(), lastIndex)
+			}
+			lastIndex = e.GetIndex()
 		}
 	}
-	return requests, nil
+	memberIndices := make([]int, len(memberEntries))
+	mergedHistory := []*raftpb.Entry{}
+	var raftIndex uint64
+	for {
+		// Find entry with raftIndex.
+		raftIndex++
+		entriesLeft := false
+		for i, entries := range memberEntries {
+			memberIndex := memberIndices[i]
+			for memberIndex < len(entries) && entries[memberIndex].GetIndex() < raftIndex {
+				memberIndex++
+			}
+			if memberIndex < len(entries) {
+				entriesLeft = true
+			}
+			memberIndices[i] = memberIndex
+		}
+		if !entriesLeft {
+			break
+		}
+		// Entries collects votes from matching entries.
+		votes := make([]int, len(memberEntries))
+		for i := 0; i < len(memberEntries); i++ {
+			if len(memberEntries[i]) <= memberIndices[i] {
+				continue
+			}
+			entry1 := memberEntries[i][memberIndices[i]]
+			if entry1.GetIndex() != raftIndex {
+				continue
+			}
+			for j := i; j < len(memberEntries); j++ {
+				if i == j {
+					votes[i]++
+					continue
+				}
+				if len(memberEntries[j]) <= memberIndices[j] {
+					continue
+				}
+				entry2 := memberEntries[j][memberIndices[j]]
+				if entry2.GetIndex() != raftIndex {
+					continue
+				}
+				if areEntriesEqual(entry1, entry2) {
+					votes[i]++
+					votes[j]++
+				}
+			}
+		}
+		// Select entry with most votes
+		topVotes := 0
+		for _, vote := range votes {
+			if vote > topVotes {
+				topVotes = vote
+			}
+		}
+		if topVotes == 0 {
+			return nil, fmt.Errorf("no entry for raft index %d", raftIndex)
+		}
+		var entryWithMostVotes *raftpb.Entry
+		for i, vote := range votes {
+			if vote != topVotes {
+				continue
+			}
+			entry := memberEntries[i][memberIndices[i]]
+			if entryWithMostVotes == nil {
+				entryWithMostVotes = entry
+				continue
+			}
+			if entryWithMostVotes.GetTerm() != entry.GetTerm() && entry.GetIndex() > minCommitIndex {
+				if entryWithMostVotes.GetTerm() < entry.GetTerm() {
+					entryWithMostVotes = entry
+				}
+				continue
+			}
+			if !areEntriesEqual(entryWithMostVotes, entry) {
+				diff := cmp.Diff(entryWithMostVotes, entry, protocmp.Transform(), protocmp.IgnoreDefaultScalars(), cmp.Comparer(bytes.Equal))
+				return nil, fmt.Errorf("mismatching entries on raft index %d, diff: %s", raftIndex, diff)
+			}
+		}
+		mergedHistory = append(mergedHistory, proto.Clone(entryWithMostVotes).(*raftpb.Entry))
+	}
+	if len(mergedHistory) == 0 {
+		return nil, errors.New("no WAL entries matched")
+	}
+	return mergedHistory, nil
 }
 
-func ReadWAL(lg *zap.Logger, dataDir string) (state raftpb.HardState, ents []raftpb.Entry, err error) {
+func areEntriesEqual(e1, e2 *raftpb.Entry) bool {
+	if e1 == nil || e2 == nil {
+		return e1 == e2
+	}
+	return e1.GetIndex() == e2.GetIndex() &&
+		e1.GetTerm() == e2.GetTerm() &&
+		e1.GetType() == e2.GetType() &&
+		bytes.Equal(e1.GetData(), e2.GetData())
+}
+
+func ReadWAL(lg *zap.Logger, dataDir string) (state *raftpb.HardState, ents []*raftpb.Entry, err error) {
 	walDir := datadir.ToWALDir(dataDir)
 	repaired := false
 	for {
-		w, err := wal.OpenForRead(lg, walDir, walpb.Snapshot{Index: 0})
+		state, ents, err = ReadAllWALEntries(lg, walDir)
 		if err != nil {
-			return state, nil, fmt.Errorf("failed to open WAL, err: %w", err)
-		}
-		_, state, ents, err = w.ReadAll()
-		w.Close()
-		if err != nil {
-			if errors.Is(err, wal.ErrSnapshotNotFound) || errors.Is(err, wal.ErrSliceOutOfRange) {
-				lg.Info("Error occurred when reading WAL entries", zap.Error(err))
-				return state, ents, nil
-			}
 			// we can only repair ErrUnexpectedEOF and we never repair twice.
 			if repaired || !errors.Is(err, io.ErrUnexpectedEOF) {
 				return state, nil, fmt.Errorf("failed to read WAL, cannot be repaired, err: %w", err)
@@ -133,15 +224,23 @@ func ReadWAL(lg *zap.Logger, dataDir string) (state raftpb.HardState, ents []raf
 	}
 }
 
-func parseEntryNormal(ent raftpb.Entry) (*model.EtcdRequest, error) {
+func parseEntryNormal(ent *raftpb.Entry) (*model.EtcdRequest, error) {
 	var raftReq pb.InternalRaftRequest
-	if err := raftReq.Unmarshal(ent.Data); err != nil {
-		var r pb.Request
-		isV2Entry := pbutil.MaybeUnmarshal(&r, ent.Data)
-		if !isV2Entry {
-			return nil, err
-		}
+	if len(ent.Data) == 0 {
 		return nil, nil
+	}
+	if err := proto.Unmarshal(ent.Data, &raftReq); err != nil {
+		// PR https://github.com/etcd-io/etcd/pull/21263 removed v2 requests
+		// in etcd v3.7. However, robustness always uses the latest protobuf
+		// definitions to parse WAL entries generated by all previous versions.
+		// etcd v3.4 and v3.5 generate v2 requests during bootstrap, which the
+		// v3.7 protobuf can no longer parse. As a result, robustness fails when
+		// parsing those WAL entries. We intentionally ignore this error here.
+		// See https://github.com/etcd-io/etcd/pull/21263#discussion_r2776042340
+		if strings.Contains(err.Error(), "proto: wrong wireType") {
+			return nil, nil
+		}
+		return nil, err
 	}
 	switch {
 	case raftReq.Put != nil:
@@ -226,7 +325,7 @@ func parseEntryNormal(ent raftpb.Entry) (*model.EtcdRequest, error) {
 		}
 		return &request, nil
 	default:
-		panic(fmt.Sprintf("Unhandled raft request: %+v", raftReq))
+		panic(fmt.Sprintf("Unhandled raft request: %s", raftReq.String()))
 	}
 }
 
@@ -237,9 +336,10 @@ func toEtcdOperation(op *pb.RequestOp) (operation model.EtcdOperation) {
 		operation = model.EtcdOperation{
 			Type: model.RangeOperation,
 			Range: model.RangeOptions{
-				Start: string(rangeOp.Key),
-				End:   string(rangeOp.RangeEnd),
-				Limit: rangeOp.Limit,
+				Start:    string(rangeOp.Key),
+				End:      string(rangeOp.RangeEnd),
+				Limit:    rangeOp.Limit,
+				KeysOnly: rangeOp.GetKeysOnly(),
 			},
 		}
 	case op.GetRequestPut() != nil:
@@ -263,4 +363,57 @@ func toEtcdOperation(op *pb.RequestOp) (operation model.EtcdOperation) {
 		panic(fmt.Sprintf("Unknown op type %v", op))
 	}
 	return operation
+}
+
+func ReadAllWALEntries(lg *zap.Logger, dirpath string) (state *raftpb.HardState, ents []*raftpb.Entry, err error) {
+	names, err := fileutil.ReadDir(dirpath)
+	if err != nil {
+		return state, nil, err
+	}
+	files := make([]fileutil.FileReader, 0, len(names))
+	for _, name := range names {
+		if !strings.HasSuffix(name, ".wal") {
+			continue
+		}
+		p := filepath.Join(dirpath, name)
+		var f *os.File
+		f, err = os.OpenFile(p, os.O_RDONLY, fileutil.PrivateFileMode)
+		if err != nil {
+			return state, nil, fmt.Errorf("os.OpenFile failed (%q): %w", p, err)
+		}
+		defer f.Close()
+		files = append(files, fileutil.NewFileReader(f))
+	}
+	rec := &walpb.Record{}
+	decoder := wal.NewDecoder(files...)
+	for err = decoder.Decode(rec); err == nil; err = decoder.Decode(rec) {
+		switch rec.GetType() {
+		case wal.EntryType:
+			e := wal.MustUnmarshalEntry(rec.Data)
+			i := len(ents)
+			for ; i > 0 && ents[i-1].GetIndex() >= e.GetIndex(); i-- {
+			}
+			// The line below is potentially overriding some 'uncommitted' entries.
+			ents = append(ents[:i], e)
+		case wal.StateType:
+			state = wal.MustUnmarshalState(rec.Data)
+		case wal.MetadataType:
+		case wal.CrcType:
+			crc := decoder.LastCRC()
+			// current crc of decoder must match the crc of the record.
+			// do no need to match 0 crc, since the decoder is a new one at this case.
+			if crc != 0 && rec.Validate(crc) != nil {
+				state.Reset()
+				return state, nil, wal.ErrCRCMismatch
+			}
+			decoder.UpdateCRC(rec.GetCrc())
+		case wal.SnapshotType:
+		default:
+			return state, nil, fmt.Errorf("unexpected block type %d", rec.Type)
+		}
+	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		return state, nil, err
+	}
+	return state, ents, nil
 }

@@ -38,7 +38,7 @@ func TestPersistLoadClientReports(t *testing.T) {
 	start := time.Since(baseTime)
 	time.Sleep(time.Nanosecond)
 	stop := time.Since(baseTime)
-	h.AppendRange("key", "", 0, 0, start, stop, &clientv3.GetResponse{Header: &etcdserverpb.ResponseHeader{Revision: 2}, Count: 2, Kvs: []*mvccpb.KeyValue{{
+	h.AppendRange("key", "", 0, 0, false, start, stop, &clientv3.GetResponse{Header: &etcdserverpb.ResponseHeader{Revision: 2}, Count: 2, Kvs: []*mvccpb.KeyValue{{
 		Key:         []byte("key"),
 		ModRevision: 2,
 		Value:       []byte("value"),
@@ -133,7 +133,8 @@ func TestPersistLoadClientReports(t *testing.T) {
 		},
 	}
 	path := t.TempDir()
-	persistClientReports(t, zaptest.NewLogger(t), path, reports)
+	err := persistClientReports(zaptest.NewLogger(t), path, reports)
+	require.NoError(t, err)
 	got, err := LoadClientReports(path)
 	require.NoError(t, err)
 	if diff := cmp.Diff(reports, got, cmpopts.EquateEmpty()); diff != "" {

@@ -15,6 +15,7 @@
 package scenarios
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -25,7 +26,6 @@ import (
 	"go.etcd.io/etcd/client/pkg/v3/fileutil"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.etcd.io/etcd/tests/v3/framework/e2e"
-	"go.etcd.io/etcd/tests/v3/robustness/client"
 	"go.etcd.io/etcd/tests/v3/robustness/failpoint"
 	"go.etcd.io/etcd/tests/v3/robustness/options"
 	"go.etcd.io/etcd/tests/v3/robustness/random"
@@ -42,22 +42,38 @@ var trafficProfiles = []TrafficProfile{
 	{
 		Name:    "EtcdHighTraffic",
 		Traffic: traffic.EtcdPut,
-		Profile: traffic.HighTrafficProfile,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueHigh,
+			Watch:      &traffic.WatchDefault,
+			Compaction: &traffic.CompactionDefault,
+		},
 	},
 	{
 		Name:    "EtcdTrafficDeleteLeases",
 		Traffic: traffic.EtcdPutDeleteLease,
-		Profile: traffic.LowTraffic,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueMedium,
+			Watch:      &traffic.WatchDefault,
+			Compaction: &traffic.CompactionDefault,
+		},
 	},
 	{
 		Name:    "KubernetesHighTraffic",
 		Traffic: traffic.Kubernetes,
-		Profile: traffic.HighTrafficProfile,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueHigh,
+			Watch:      &traffic.WatchDefault,
+			Compaction: &traffic.CompactionDefault,
+		},
 	},
 	{
 		Name:    "KubernetesLowTraffic",
 		Traffic: traffic.Kubernetes,
-		Profile: traffic.LowTraffic,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueMedium,
+			Watch:      &traffic.WatchDefault,
+			Compaction: &traffic.CompactionDefault,
+		},
 	},
 }
 
@@ -67,7 +83,6 @@ type TestScenario struct {
 	Cluster   e2e.EtcdProcessClusterConfig
 	Traffic   traffic.Traffic
 	Profile   traffic.Profile
-	Watch     client.WatchConfig
 }
 
 func Exploratory(_ *testing.T) []TestScenario {
@@ -96,9 +111,13 @@ func Exploratory(_ *testing.T) []TestScenario {
 		options.WithSnapshotCount(50, 100, 1000),
 		options.WithSubsetOptions(randomizableOptions...),
 		e2e.WithGoFailEnabled(true),
-		// Set low minimal compaction batch limit to allow for triggering multi batch compaction failpoints.
-		options.WithExperimentalCompactionBatchLimit(10, 100, 1000),
-		e2e.WithExperimentalWatchProcessNotifyInterval(100 * time.Millisecond),
+		// Set a low minimal compaction batch limit to allow for triggering multi batch compaction failpoints.
+		options.WithCompactionBatchLimit(10, 100, 1000),
+		e2e.WithWatchProcessNotifyInterval(100 * time.Millisecond),
+	}
+
+	if addr := os.Getenv("TRACING_SERVER_ADDR"); addr != "" {
+		baseOptions = append(baseOptions, e2e.WithEnableDistributedTracing(addr))
 	}
 
 	if e2e.CouldSetSnapshotCatchupEntries(e2e.BinPath.Etcd) {
@@ -109,6 +128,12 @@ func Exploratory(_ *testing.T) []TestScenario {
 		name := filepath.Join(tp.Name, "ClusterOfSize1")
 		clusterOfSize1Options := baseOptions
 		clusterOfSize1Options = append(clusterOfSize1Options, e2e.WithClusterSize(1))
+		// NonBlockingDefrag is safe to randomize only for single-member clusters
+		// because mixed-version clusters (clusterOfSize3) may use older binaries
+		// that don't support this feature gate.
+		clusterOfSize1Options = append(clusterOfSize1Options,
+			options.WithSubsetOptions(e2e.WithServerFeatureGate("NonBlockingDefrag", true)),
+		)
 		scenarios = append(scenarios, TestScenario{
 			Name:    name,
 			Traffic: tp.Traffic,
@@ -135,17 +160,18 @@ func Exploratory(_ *testing.T) []TestScenario {
 	if e2e.BinPath.LazyFSAvailable() {
 		newScenarios := scenarios
 		for _, s := range scenarios {
-			// LazyFS increases the load on CPU, so we run it with more lightweight case.
-			if s.Profile.MinimalQPS <= 100 && s.Cluster.ClusterSize == 1 {
+			// LazyFS increases the load on the CPU, so we run it with a more lightweight case.
+			if s.Profile.KeyValue.MinimalQPS <= 100 && s.Cluster.ClusterSize == 1 {
 				lazyfsCluster := s.Cluster
 				lazyfsCluster.LazyFSEnabled = true
+				profileWithoutCompaction := s.Profile
+				profileWithoutCompaction.Compaction = nil
 				newScenarios = append(newScenarios, TestScenario{
 					Name:      filepath.Join(s.Name, "LazyFS"),
 					Failpoint: s.Failpoint,
 					Cluster:   lazyfsCluster,
 					Traffic:   s.Traffic,
-					Profile:   s.Profile.WithoutCompaction(),
-					Watch:     s.Watch,
+					Profile:   profileWithoutCompaction,
 				})
 			}
 		}
@@ -162,8 +188,11 @@ func Regression(t *testing.T) []TestScenario {
 	scenarios = append(scenarios, TestScenario{
 		Name:      "Issue14370",
 		Failpoint: failpoint.RaftBeforeSavePanic,
-		Profile:   traffic.LowTraffic,
-		Traffic:   traffic.EtcdPutDeleteLease,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueMedium,
+			Compaction: &traffic.CompactionDefault,
+		},
+		Traffic: traffic.EtcdPutDeleteLease,
 		Cluster: *e2e.NewConfig(
 			e2e.WithClusterSize(1),
 			e2e.WithGoFailEnabled(true),
@@ -172,28 +201,70 @@ func Regression(t *testing.T) []TestScenario {
 	scenarios = append(scenarios, TestScenario{
 		Name:      "Issue14685",
 		Failpoint: failpoint.DefragBeforeCopyPanic,
-		Profile:   traffic.LowTraffic,
-		Traffic:   traffic.EtcdPutDeleteLease,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueMedium,
+			Compaction: &traffic.CompactionDefault,
+		},
+		Traffic: traffic.EtcdPutDeleteLease,
 		Cluster: *e2e.NewConfig(
 			e2e.WithClusterSize(1),
 			e2e.WithGoFailEnabled(true),
 		),
 	})
+	// Non-blocking defrag regression scenarios: test crash recovery at each
+	// phase of the non-blocking defrag pipeline.
+	scenarios = append(scenarios, TestScenario{
+		Name:      "NonBlockingDefragBeforeCopyPanic",
+		Failpoint: failpoint.DefragNonBlockingBeforeCopyPanic,
+		Profile:   traffic.LowTraffic,
+		Traffic:   traffic.EtcdPutDeleteLease,
+		Cluster: *e2e.NewConfig(
+			e2e.WithClusterSize(1),
+			e2e.WithGoFailEnabled(true),
+			e2e.WithServerFeatureGate("NonBlockingDefrag", true),
+		),
+	})
+	scenarios = append(scenarios, TestScenario{
+		Name:      "NonBlockingDefragBeforeReplayPanic",
+		Failpoint: failpoint.DefragBeforeReplayPanic,
+		Profile:   traffic.LowTraffic,
+		Traffic:   traffic.EtcdPutDeleteLease,
+		Cluster: *e2e.NewConfig(
+			e2e.WithClusterSize(1),
+			e2e.WithGoFailEnabled(true),
+			e2e.WithServerFeatureGate("NonBlockingDefrag", true),
+		),
+	})
+	scenarios = append(scenarios, TestScenario{
+		Name:      "NonBlockingDefragBeforeRenamePanic",
+		Failpoint: failpoint.DefragBeforeRenamePanic,
+		Profile:   traffic.LowTraffic,
+		Traffic:   traffic.EtcdPutDeleteLease,
+		Cluster: *e2e.NewConfig(
+			e2e.WithClusterSize(1),
+			e2e.WithGoFailEnabled(true),
+			e2e.WithServerFeatureGate("NonBlockingDefrag", true),
+		),
+	})
 	scenarios = append(scenarios, TestScenario{
 		Name:      "Issue13766",
 		Failpoint: failpoint.KillFailpoint,
-		Profile:   traffic.HighTrafficProfile,
-		Traffic:   traffic.EtcdPut,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueHigh,
+			Compaction: &traffic.CompactionDefault,
+		},
+		Traffic: traffic.EtcdPut,
 		Cluster: *e2e.NewConfig(
 			e2e.WithSnapshotCount(100),
 		),
 	})
 	scenarios = append(scenarios, TestScenario{
 		Name: "Issue15220",
-		Watch: client.WatchConfig{
-			RequestProgress: true,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueMedium,
+			Watch:      &traffic.WatchDefault,
+			Compaction: &traffic.CompactionDefault,
 		},
-		Profile:   traffic.LowTraffic,
 		Traffic:   traffic.EtcdPutDeleteLease,
 		Failpoint: failpoint.KillFailpoint,
 		Cluster: *e2e.NewConfig(
@@ -201,8 +272,12 @@ func Regression(t *testing.T) []TestScenario {
 		),
 	})
 	scenarios = append(scenarios, TestScenario{
-		Name:      "Issue17529",
-		Profile:   traffic.HighTrafficProfile,
+		Name: "Issue17529",
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueHigh,
+			Watch:      &traffic.WatchDefault,
+			Compaction: &traffic.CompactionDefault,
+		},
 		Traffic:   traffic.Kubernetes,
 		Failpoint: failpoint.SleepBeforeSendWatchResponse,
 		Cluster: *e2e.NewConfig(
@@ -213,13 +288,15 @@ func Regression(t *testing.T) []TestScenario {
 	})
 
 	scenarios = append(scenarios, TestScenario{
-		Name:      "Issue17780",
-		Profile:   traffic.LowTraffic.WithoutCompaction(),
+		Name: "Issue17780",
+		Profile: traffic.Profile{
+			KeyValue: &traffic.KeyValueMedium,
+		},
 		Failpoint: failpoint.BatchCompactBeforeSetFinishedCompactPanic,
 		Traffic:   traffic.Kubernetes,
 		Cluster: *e2e.NewConfig(
 			e2e.WithClusterSize(1),
-			e2e.WithExperimentalCompactionBatchLimit(300),
+			e2e.WithCompactionBatchLimit(300),
 			e2e.WithSnapshotCount(1000),
 			e2e.WithGoFailEnabled(true),
 		),
@@ -240,29 +317,50 @@ func Regression(t *testing.T) []TestScenario {
 	scenarios = append(scenarios, TestScenario{
 		Name: "Issue19179",
 		Profile: traffic.Profile{
-			MinimalQPS:                     50,
-			MaximalQPS:                     100,
-			BurstableQPS:                   100,
-			ClientCount:                    8,
-			MaxNonUniqueRequestConcurrency: 3,
-		}.WithoutCompaction(),
+			KeyValue: &traffic.KeyValueVeryLow,
+			Watch:    &traffic.WatchDefault,
+		},
 		Failpoint: failpoint.BatchCompactBeforeSetFinishedCompactPanic,
 		Traffic:   traffic.KubernetesCreateDelete,
 		Cluster: *e2e.NewConfig(
 			e2e.WithClusterSize(1),
-			e2e.WithExperimentalCompactionBatchLimit(50),
+			e2e.WithCompactionBatchLimit(50),
 			e2e.WithSnapshotCount(1000),
 			e2e.WithGoFailEnabled(true),
 		),
 	})
 	scenarios = append(scenarios, TestScenario{
-		Name:      "Issue18089",
-		Profile:   traffic.LowTraffic.WithCompactionPeriod(100 * time.Millisecond), // Use frequent compaction for high reproduce rate
+		Name: "Issue18089",
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueMedium,
+			Compaction: &traffic.CompactionFrequent, // Use frequent compaction for high reproduce rate
+			Watch:      &traffic.WatchDefault,
+		},
 		Failpoint: failpoint.SleepBeforeSendWatchResponse,
 		Traffic:   traffic.EtcdDelete,
 		Cluster: *e2e.NewConfig(
 			e2e.WithClusterSize(1),
 			e2e.WithGoFailEnabled(true),
+		),
+	})
+	scenarios = append(scenarios, TestScenario{
+		Name:      "Issue20221",
+		Failpoint: failpoint.BlackholeUntilSnapshot,
+		Profile: traffic.Profile{
+			KeyValue: &traffic.KeyValueHigh,
+			Watch: &traffic.Watch{
+				MemberClientCount:   6,
+				ClusterClientCount:  2,
+				RevisionOffsetRange: traffic.Range{Min: 50, Max: 100},
+			},
+		},
+		Traffic: traffic.EtcdPut,
+		Cluster: *e2e.NewConfig(
+			e2e.WithSnapshotCount(10),
+			e2e.WithPeerProxy(true),
+			e2e.WithIsPeerTLS(true),
+			e2e.WithWatchProcessNotifyInterval(10*time.Millisecond),
+			e2e.WithSnapshotCatchUpEntries(10),
 		),
 	})
 	if v.Compare(version.V3_5) >= 0 {
@@ -277,9 +375,13 @@ func Regression(t *testing.T) []TestScenario {
 		scenarios = append(scenarios, TestScenario{
 			Name:      "Issue15271",
 			Failpoint: failpoint.BlackholeUntilSnapshot,
-			Profile:   traffic.HighTrafficProfile,
-			Traffic:   traffic.EtcdPut,
-			Cluster:   *e2e.NewConfig(opts...),
+			Profile: traffic.Profile{
+				KeyValue:   &traffic.KeyValueHigh,
+				Compaction: &traffic.CompactionDefault,
+				Watch:      &traffic.WatchDefault,
+			},
+			Traffic: traffic.EtcdPut,
+			Cluster: *e2e.NewConfig(opts...),
 		})
 	}
 	return scenarios

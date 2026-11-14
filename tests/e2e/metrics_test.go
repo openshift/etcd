@@ -15,17 +15,12 @@
 package e2e
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"testing"
 	"time"
 
-	dto "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/require"
 
 	"go.etcd.io/etcd/api/v3/version"
@@ -116,7 +111,8 @@ func learnerMetricApplyFromSnapshotTest(cx ctlCtx) {
 func triggerSnapshot(ctx context.Context, cx ctlCtx) {
 	etcdctl := cx.epc.Procs[0].Etcdctl()
 	for i := 0; i < int(cx.epc.Cfg.ServerConfig.SnapshotCount); i++ {
-		require.NoError(cx.t, etcdctl.Put(ctx, "k", "v", config.PutOptions{}))
+		_, err := etcdctl.Put(ctx, "k", "v", config.PutOptions{})
+		require.NoError(cx.t, err)
 	}
 }
 
@@ -164,12 +160,15 @@ func TestNoMetricsMissing(t *testing.T) {
 			"etcd_debugging_mvcc_watch_stream_total",
 			"etcd_debugging_mvcc_watcher_total",
 			"etcd_debugging_server_lease_expired_total",
+			"etcd_debugging_server_watch_send_loop_watch_stream_duration_seconds",
+			"etcd_debugging_server_watch_send_loop_watch_stream_duration_per_event_seconds",
+			"etcd_debugging_server_watch_send_loop_control_stream_duration_seconds",
+			"etcd_debugging_server_watch_send_loop_progress_duration_seconds",
 			"etcd_debugging_snap_save_marshalling_duration_seconds",
 			"etcd_debugging_snap_save_total_duration_seconds",
 			"etcd_debugging_store_expires_total",
 			"etcd_debugging_store_watch_requests_total",
 			"etcd_debugging_store_watchers",
-			"etcd_debugging_store_writes_total",
 			"etcd_disk_backend_commit_duration_seconds",
 			"etcd_disk_backend_defrag_duration_seconds",
 			"etcd_disk_backend_snapshot_duration_seconds",
@@ -213,6 +212,7 @@ func TestNoMetricsMissing(t *testing.T) {
 			"etcd_server_quota_backend_bytes",
 			"etcd_server_range_duration_seconds",
 			"etcd_server_read_indexes_failed_total",
+			"etcd_server_request_duration_seconds",
 			"etcd_server_slow_apply_total",
 			"etcd_server_slow_read_indexes_total",
 			"etcd_server_snapshot_apply_in_progress_total",
@@ -306,7 +306,7 @@ func TestNoMetricsMissing(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			e2e.BeforeTest(t)
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 
 			epc, err := e2e.NewEtcdProcessCluster(ctx, t, tc.options...)
@@ -315,7 +315,7 @@ func TestNoMetricsMissing(t *testing.T) {
 
 			c := epc.Procs[0].Etcdctl()
 			for i := 0; i < 3; i++ {
-				err = c.Put(ctx, fmt.Sprintf("key_%d", i), fmt.Sprintf("value_%d", i), config.PutOptions{})
+				_, err = c.Put(ctx, fmt.Sprintf("key_%d", i), fmt.Sprintf("value_%d", i), config.PutOptions{})
 				require.NoError(t, err)
 			}
 			_, err = c.Get(ctx, "k", config.GetOptions{})
@@ -324,7 +324,7 @@ func TestNoMetricsMissing(t *testing.T) {
 			metricsURL, err := url.JoinPath(epc.Procs[0].Config().ClientURL, "metrics")
 			require.NoError(t, err)
 
-			mfs, err := getMetrics(metricsURL)
+			mfs, err := e2e.GetMetrics(metricsURL)
 			require.NoError(t, err)
 
 			var missingMetrics []string
@@ -339,23 +339,6 @@ func TestNoMetricsMissing(t *testing.T) {
 			// t.Logf("All metrics: %v", formatMetrics(slices.Sorted(maps.Keys(mfs))))
 		})
 	}
-}
-
-func getMetrics(metricsURL string) (map[string]*dto.MetricFamily, error) {
-	httpClient := http.Client{Transport: &http.Transport{}}
-	resp, err := httpClient.Get(metricsURL)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var parser expfmt.TextParser
-	return parser.TextToMetricFamilies(bytes.NewReader(data))
 }
 
 // formatMetrics is only for test purpose

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	"go.etcd.io/etcd/client/pkg/v3/verify"
@@ -156,11 +157,21 @@ func (s *store) hash() (hash uint32, revision int64, err error) {
 	// TODO: hash and revision could be inconsistent, one possible fix is to add s.revMu.RLock() at the beginning of function, which is costly
 	start := time.Now()
 
-	s.b.ForceCommit()
-	h, err := s.b.Hash(schema.DefaultIgnores)
+	// Restore replaces s.b under s.mu. Commit before releasing s.mu so that
+	// ForceCommit never runs on a backend that was replaced and closed.
+	s.mu.RLock()
+	b := s.b
+	b.ForceCommit()
+	s.mu.RUnlock()
+
+	h, err := b.Hash(schema.DefaultIgnores)
+
+	s.revMu.RLock()
+	revision = s.currentRev
+	s.revMu.RUnlock()
 
 	hashSec.Observe(time.Since(start).Seconds())
-	return h, s.currentRev, err
+	return h, revision, err
 }
 
 func (s *store) hashByRev(rev int64) (hash KeyValueHash, currentRev int64, err error) {
@@ -426,7 +437,7 @@ func (s *store) restore() error {
 
 type revKeyValue struct {
 	key  []byte
-	kv   mvccpb.KeyValue
+	kv   *mvccpb.KeyValue
 	kstr string
 }
 
@@ -459,9 +470,10 @@ func restoreIntoIndex(lg *zap.Logger, idx index) (chan<- revKeyValue, <-chan int
 			}
 
 			rev := BytesToRev(rkv.key)
-			verify.Verify(func() {
-				if rev.Main < currentRev {
-					panic(fmt.Errorf("revision %d shouldn't be less than the previous revision %d", rev.Main, currentRev))
+			verify.Verify("revision shouldn't be less than the previous revision", func() (bool, map[string]any) {
+				return rev.Main >= currentRev, map[string]any{
+					"revision":          rev.Main,
+					"previous revision": currentRev,
 				}
 			})
 			currentRev = rev.Main
@@ -491,9 +503,13 @@ func restoreIntoIndex(lg *zap.Logger, idx index) (chan<- revKeyValue, <-chan int
 func restoreChunk(lg *zap.Logger, kvc chan<- revKeyValue, keys, vals [][]byte, keyToLease map[string]lease.LeaseID) {
 	for i, key := range keys {
 		rkv := revKeyValue{key: key}
-		if err := rkv.kv.Unmarshal(vals[i]); err != nil {
+
+		kv := &mvccpb.KeyValue{}
+		if err := proto.Unmarshal(vals[i], kv); err != nil {
 			lg.Fatal("failed to unmarshal mvccpb.KeyValue", zap.Error(err))
 		}
+		rkv.kv = kv
+
 		rkv.kstr = string(rkv.kv.Key)
 		if isTombstone(key) {
 			delete(keyToLease, rkv.kstr)

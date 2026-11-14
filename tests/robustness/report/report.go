@@ -15,71 +15,107 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
-	"strings"
-	"testing"
-	"time"
 
-	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"go.etcd.io/etcd/tests/v3/framework/e2e"
 )
 
 type TestReport struct {
-	Logger    *zap.Logger
-	Cluster   *e2e.EtcdProcessCluster
-	Client    []ClientReport
-	Visualize func(path string) error
+	logger          *zap.Logger
+	reportPath      string
+	serverDataPaths map[string]string
+	clientReports   []ClientReport
+	visualize       func(lg *zap.Logger, path string) error
+	traffic         *TrafficDetail
+	dataSaved       bool
 }
 
-func testResultsDirectory(t *testing.T) string {
-	resultsDirectory, ok := os.LookupEnv("RESULTS_DIR")
-	if !ok {
-		resultsDirectory = "/tmp/"
+func NewTestReport(lg *zap.Logger, reportPath string, serverDataPaths map[string]string, traffic *TrafficDetail) (*TestReport, error) {
+	if reportPath == "" {
+		return nil, fmt.Errorf("reportPath is not set")
 	}
-	resultsDirectory, err := filepath.Abs(resultsDirectory)
+	return &TestReport{
+		logger:          lg,
+		reportPath:      reportPath,
+		serverDataPaths: serverDataPaths,
+		traffic:         traffic,
+	}, nil
+}
+
+func (r *TestReport) SetClientReports(reports []ClientReport) {
+	r.clientReports = reports
+}
+
+func (r *TestReport) SetVisualizer(visualize func(lg *zap.Logger, path string) error) {
+	r.visualize = visualize
+}
+
+func (r *TestReport) SaveEtcdData() error {
+	if r.dataSaved {
+		return nil
+	}
+	r.logger.Info("Saving etcd data", zap.String("path", r.reportPath))
+	err := os.RemoveAll(r.reportPath)
 	if err != nil {
-		panic(err)
+		r.logger.Error("Failed to remove report dir", zap.Error(err))
 	}
-	path, err := filepath.Abs(filepath.Join(
-		resultsDirectory, strings.ReplaceAll(t.Name(), "/", "_"), fmt.Sprintf("%v", time.Now().UnixNano())))
-	require.NoError(t, err)
-	err = os.RemoveAll(path)
-	require.NoError(t, err)
-	err = os.MkdirAll(path, 0o700)
-	require.NoError(t, err)
-	return path
-}
-
-func (r *TestReport) Report(t *testing.T, force bool) {
-	_, persistResultsEnvSet := os.LookupEnv("PERSIST_RESULTS")
-	if !t.Failed() && !force && !persistResultsEnvSet {
-		return
-	}
-	path := testResultsDirectory(t)
-	r.Logger.Info("Saving robustness test report", zap.String("path", path))
-	for _, member := range r.Cluster.Procs {
-		memberDataDir := filepath.Join(path, fmt.Sprintf("server-%s", member.Config().Name))
-		persistMemberDataDir(t, r.Logger, member, memberDataDir)
-	}
-	if r.Client != nil {
-		persistClientReports(t, r.Logger, path, r.Client)
-	}
-	if r.Visualize != nil {
-		err := r.Visualize(filepath.Join(path, "history.html"))
-		if err != nil {
-			t.Error(err)
+	for server, dataPath := range r.serverDataPaths {
+		serverReportPath := filepath.Join(r.reportPath, fmt.Sprintf("server-%s", server))
+		r.logger.Info("Saving member data dir", zap.String("member", server), zap.String("data-dir", dataPath), zap.String("path", serverReportPath))
+		if err := os.CopyFS(serverReportPath, os.DirFS(dataPath)); err != nil {
+			return err
 		}
 	}
+	if r.clientReports != nil {
+		if err := persistClientReports(r.logger, r.reportPath, r.clientReports); err != nil {
+			return err
+		}
+	}
+	if r.traffic != nil {
+		if err := persistTrafficDetail(r.logger, r.reportPath, *r.traffic); err != nil {
+			return err
+		}
+	}
+	r.dataSaved = true
+	return nil
 }
 
-func persistMemberDataDir(t *testing.T, lg *zap.Logger, member e2e.EtcdProcess, path string) {
-	lg.Info("Saving member data dir", zap.String("member", member.Config().Name), zap.String("path", path))
-	err := os.Rename(memberDataDir(member), path)
-	require.NoError(t, err)
+func (r *TestReport) Finalize(tFailed bool, panicked bool) error {
+	_, persistResults := os.LookupEnv("PERSIST_RESULTS")
+	keep := tFailed || panicked || persistResults
+	if !keep {
+		if !r.dataSaved {
+			return nil
+		}
+		r.logger.Info("Removing robustness test report", zap.String("path", r.reportPath))
+		return os.RemoveAll(r.reportPath)
+	}
+
+	if err := r.SaveEtcdData(); err != nil {
+		return fmt.Errorf("failed to save etcd data: %w", err)
+	}
+
+	if r.visualize == nil {
+		r.logger.Info("No visualization available to be saved", zap.String("path", r.reportPath))
+		return nil
+	}
+	r.logger.Info("Adding visualization to test report", zap.String("path", r.reportPath))
+	return r.visualize(r.logger, filepath.Join(r.reportPath, "history.html"))
+}
+
+func ServerDataPaths(c *e2e.EtcdProcessCluster) map[string]string {
+	dataPaths := make(map[string]string)
+	for _, member := range c.Procs {
+		dataPaths[member.Config().Name] = memberDataDir(member)
+	}
+
+	return dataPaths
 }
 
 func memberDataDir(member e2e.EtcdProcess) string {
@@ -88,4 +124,29 @@ func memberDataDir(member e2e.EtcdProcess) string {
 		return filepath.Join(lazyFS.LazyFSDir, "data")
 	}
 	return member.Config().DataDirPath
+}
+
+type TrafficDetail struct {
+	ExpectUniqueRevision bool `json:"expectuniquerevision,omitempty"`
+}
+
+const trafficDetailFileName = "traffic.json"
+
+func persistTrafficDetail(lg *zap.Logger, p string, td TrafficDetail) error {
+	lg.Info("Saving traffic configuration details", zap.String("path", path.Join(p, trafficDetailFileName)))
+	b, err := json.Marshal(td)
+	if err != nil {
+		return nil
+	}
+	return os.WriteFile(filepath.Join(p, trafficDetailFileName), b, 0o644)
+}
+
+func LoadTrafficDetail(p string) (TrafficDetail, error) {
+	var detail TrafficDetail
+	b, err := os.ReadFile(filepath.Join(p, trafficDetailFileName))
+	if err != nil {
+		return TrafficDetail{}, err
+	}
+	err = json.Unmarshal(b, &detail)
+	return detail, err
 }

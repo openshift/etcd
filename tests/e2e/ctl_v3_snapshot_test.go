@@ -163,17 +163,13 @@ func TestIssue6361(t *testing.T) { testIssue6361(t) }
 // TestIssue6361 ensures new member that starts with snapshot correctly
 // syncs up with other members and serve correct data.
 func testIssue6361(t *testing.T) {
-	{
-		// This tests is pretty flaky on semaphoreci as of 2021-01-10.
-		// TODO: Remove when the flakiness source is identified.
-		oldenv := os.Getenv("EXPECT_DEBUG")
-		defer os.Setenv("EXPECT_DEBUG", oldenv)
-		os.Setenv("EXPECT_DEBUG", "1")
-	}
+	// This tests is pretty flaky on semaphoreci as of 2021-01-10.
+	// TODO: Remove when the flakiness source is identified.
+	t.Setenv("EXPECT_DEBUG", "1")
 
 	e2e.BeforeTest(t)
 
-	epc, err := e2e.NewEtcdProcessCluster(context.TODO(), t,
+	epc, err := e2e.NewEtcdProcessCluster(t.Context(), t,
 		e2e.WithClusterSize(1),
 		e2e.WithKeepDataDir(true),
 	)
@@ -226,7 +222,7 @@ func testIssue6361(t *testing.T) {
 			epc.Procs[0].Config().Args[i+1] = newDataDir
 		}
 	}
-	require.NoError(t, epc.Procs[0].Restart(context.TODO()))
+	require.NoError(t, epc.Procs[0].Restart(t.Context()))
 
 	t.Log("Ensuring the restored member has the correct data...")
 	for i := range kvs {
@@ -290,15 +286,15 @@ func snapshotVersionTest(cx ctlCtx) {
 	if err != nil {
 		cx.t.Fatalf("snapshotVersionTest getSnapshotStatus error (%v)", err)
 	}
-	if st.Version != "3.6.0" {
-		cx.t.Fatalf("expected %q, got %q", "3.6.0", st.Version)
+	if st.Version != "3.7.0" {
+		cx.t.Fatalf("expected %q, got %q", "3.7.0", st.Version)
 	}
 }
 
 func TestRestoreCompactionRevBump(t *testing.T) {
 	e2e.BeforeTest(t)
 
-	epc, err := e2e.NewEtcdProcessCluster(context.TODO(), t,
+	epc, err := e2e.NewEtcdProcessCluster(t.Context(), t,
 		e2e.WithClusterSize(1),
 		e2e.WithKeepDataDir(true),
 	)
@@ -313,13 +309,14 @@ func TestRestoreCompactionRevBump(t *testing.T) {
 
 	ctl := epc.Etcdctl()
 
-	watchCh := ctl.Watch(context.Background(), "foo", config.WatchOptions{Prefix: true})
+	watchCh := ctl.Watch(t.Context(), "foo", config.WatchOptions{Prefix: true})
 	// flake-fix: the watch can sometimes miss the first put below causing test failure
 	time.Sleep(100 * time.Millisecond)
 
 	kvs := []testutils.KV{{Key: "foo1", Val: "val1"}, {Key: "foo2", Val: "val2"}, {Key: "foo3", Val: "val3"}}
 	for i := range kvs {
-		require.NoError(t, ctl.Put(context.Background(), kvs[i].Key, kvs[i].Val, config.PutOptions{}))
+		_, err = ctl.Put(t.Context(), kvs[i].Key, kvs[i].Val, config.PutOptions{})
+		require.NoError(t, err)
 	}
 
 	watchTimeout := 1 * time.Second
@@ -341,10 +338,11 @@ func TestRestoreCompactionRevBump(t *testing.T) {
 	// add some more kvs that are not in the snapshot that will be lost after restore
 	unsnappedKVs := []testutils.KV{{Key: "unsnapped1", Val: "one"}, {Key: "unsnapped2", Val: "two"}, {Key: "unsnapped3", Val: "three"}}
 	for i := range unsnappedKVs {
-		require.NoError(t, ctl.Put(context.Background(), unsnappedKVs[i].Key, unsnappedKVs[i].Val, config.PutOptions{}))
+		_, err = ctl.Put(t.Context(), unsnappedKVs[i].Key, unsnappedKVs[i].Val, config.PutOptions{})
+		require.NoError(t, err)
 	}
 
-	membersBefore, err := ctl.MemberList(context.Background(), false)
+	membersBefore, err := ctl.MemberList(t.Context(), false)
 	require.NoError(t, err)
 
 	t.Log("Stopping the original server...")
@@ -369,21 +367,18 @@ func TestRestoreCompactionRevBump(t *testing.T) {
 	t.Log("(Re)starting the etcd member using the restored snapshot...")
 	epc.Procs[0].Config().DataDirPath = newDataDir
 
-	for i := range epc.Procs[0].Config().Args {
-		if epc.Procs[0].Config().Args[i] == "--data-dir" {
-			epc.Procs[0].Config().Args[i+1] = newDataDir
-		}
-	}
+	err = e2e.PatchArgs(epc.Procs[0].Config().Args, "data-dir", newDataDir)
+	require.NoError(t, err)
 
 	// Verify that initial snapshot is created by the restore operation
 	verifySnapshotMembers(t, epc, membersBefore)
 
-	require.NoError(t, epc.Restart(context.Background()))
+	require.NoError(t, epc.Restart(t.Context()))
 
 	t.Log("Ensuring the restored member has the correct data...")
 	hasKVs(t, ctl, kvs, currentRev, baseRev)
 	for i := range unsnappedKVs {
-		v, gerr := ctl.Get(context.Background(), unsnappedKVs[i].Key, config.GetOptions{})
+		v, gerr := ctl.Get(t.Context(), unsnappedKVs[i].Key, config.GetOptions{})
 		require.NoError(t, gerr)
 		require.Equal(t, int64(0), v.Count)
 	}
@@ -399,7 +394,7 @@ func TestRestoreCompactionRevBump(t *testing.T) {
 	// clients might restart the watch at the old base revision, that should not yield any new data
 	// everything up until bumpAmount+currentRev should return "already compacted"
 	for i := bumpAmount - 2; i < bumpAmount+currentRev; i++ {
-		watchCh = ctl.Watch(context.Background(), "foo", config.WatchOptions{Prefix: true, Revision: int64(i)})
+		watchCh = ctl.Watch(t.Context(), "foo", config.WatchOptions{Prefix: true, Revision: int64(i)})
 		cancelResult := <-watchCh
 		require.Equal(t, v3rpc.ErrCompacted, cancelResult.Err())
 		require.Truef(t, cancelResult.Canceled, "expected ongoing watch to be cancelled after restoring with --mark-compacted")
@@ -407,10 +402,11 @@ func TestRestoreCompactionRevBump(t *testing.T) {
 	}
 
 	// a watch after that revision should yield successful results when a new put arrives
-	ctx, cancel := context.WithTimeout(context.Background(), watchTimeout*5)
+	ctx, cancel := context.WithTimeout(t.Context(), watchTimeout*5)
 	defer cancel()
 	watchCh = ctl.Watch(ctx, "foo", config.WatchOptions{Prefix: true, Revision: int64(bumpAmount + currentRev + 1)})
-	require.NoError(t, ctl.Put(context.Background(), "foo4", "val4", config.PutOptions{}))
+	_, err = ctl.Put(ctx, "foo4", "val4", config.PutOptions{})
+	require.NoError(t, err)
 	watchRes, err = testutils.KeyValuesFromWatchChan(watchCh, 1, watchTimeout)
 	require.NoErrorf(t, err, "failed to get key-values from watch channel %s", err)
 	require.Equal(t, []testutils.KV{{Key: "foo4", Val: "val4"}}, watchRes)
@@ -418,7 +414,7 @@ func TestRestoreCompactionRevBump(t *testing.T) {
 
 func hasKVs(t *testing.T, ctl *e2e.EtcdctlV3, kvs []testutils.KV, currentRev int, baseRev int) {
 	for i := range kvs {
-		v, err := ctl.Get(context.Background(), kvs[i].Key, config.GetOptions{})
+		v, err := ctl.Get(t.Context(), kvs[i].Key, config.GetOptions{})
 		require.NoError(t, err)
 		require.Equal(t, int64(1), v.Count)
 		require.Equal(t, kvs[i].Val, string(v.Kvs[0].Value))
@@ -431,7 +427,7 @@ func hasKVs(t *testing.T, ctl *e2e.EtcdctlV3, kvs []testutils.KV, currentRev int
 
 func TestBreakConsistentIndexNewerThanSnapshot(t *testing.T) {
 	e2e.BeforeTest(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
 	var snapshotCount uint64 = 50

@@ -16,17 +16,18 @@ package mvcc
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	"go.etcd.io/etcd/pkg/v3/traceutil"
@@ -46,7 +47,7 @@ func TestWatch(t *testing.T) {
 	w := s.NewWatchStream()
 	defer w.Close()
 
-	w.Watch(0, testKey, nil, 0)
+	w.Watch(t.Context(), 0, testKey, nil, 0)
 	if !s.(*watchableStore).synced.contains(string(testKey)) {
 		// the key must have had an entry in synced
 		t.Errorf("existence = false, want true")
@@ -65,13 +66,13 @@ func TestNewWatcherCancel(t *testing.T) {
 	w := s.NewWatchStream()
 	defer w.Close()
 
-	wt, _ := w.Watch(0, testKey, nil, 0)
+	wt, _ := w.Watch(t.Context(), 0, testKey, nil, 0)
 	if err := w.Cancel(wt); err != nil {
 		t.Error(err)
 	}
 
 	if s.(*watchableStore).synced.contains(string(testKey)) {
-		// the key shoud have been deleted
+		// the key should have been deleted
 		t.Errorf("existence = true, want false")
 	}
 }
@@ -107,7 +108,7 @@ etcd_debugging_mvcc_watcher_total %d
 		w := s.NewWatchStream()
 		defer w.Close()
 
-		wt, _ := w.Watch(0, testKey, nil, 0)
+		wt, _ := w.Watch(t.Context(), 0, testKey, nil, 0)
 
 		// after creating watch, the gauge state should have increased
 		expectWatchGauge(initialGaugeState + 1)
@@ -152,7 +153,7 @@ etcd_debugging_mvcc_watcher_total %d
 		w := s.NewWatchStream()
 		defer w.Close()
 
-		wt, _ := w.Watch(0, testKey, nil, rev-1)
+		wt, _ := w.Watch(t.Context(), 0, testKey, nil, rev-1)
 
 		// wait for the watcher to be marked as compacted
 		select {
@@ -206,7 +207,7 @@ etcd_debugging_mvcc_watcher_total %d
 
 		w := s.NewWatchStream()
 
-		wt, _ := w.Watch(0, testKey, nil, rev-1)
+		wt, _ := w.Watch(t.Context(), 0, testKey, nil, rev-1)
 
 		// wait for the watcher to be marked as compacted
 		select {
@@ -274,7 +275,7 @@ func TestCancelUnsynced(t *testing.T) {
 	watchIDs := make([]WatchID, watcherN)
 	for i := 0; i < watcherN; i++ {
 		// use 1 to keep watchers in unsynced
-		watchIDs[i], _ = w.Watch(0, testKey, nil, 1)
+		watchIDs[i], _ = w.Watch(t.Context(), 0, testKey, nil, 1)
 	}
 
 	for _, idx := range watchIDs {
@@ -307,13 +308,13 @@ func TestSyncWatchers(t *testing.T) {
 	defer w.Close()
 	watcherN := 100
 	for i := 0; i < watcherN; i++ {
-		_, err := w.Watch(0, testKey, nil, 1)
+		_, err := w.Watch(t.Context(), 0, testKey, nil, 1)
 		require.NoError(t, err)
 	}
 
 	assert.Empty(t, s.synced.watcherSetByKey(string(testKey)))
 	assert.Len(t, s.unsynced.watcherSetByKey(string(testKey)), watcherN)
-	s.syncWatchers([]mvccpb.Event{})
+	s.syncWatchers()
 	assert.Len(t, s.synced.watcherSetByKey(string(testKey)), watcherN)
 	assert.Empty(t, s.unsynced.watcherSetByKey(string(testKey)))
 
@@ -321,9 +322,9 @@ func TestSyncWatchers(t *testing.T) {
 	for i := 0; i < watcherN; i++ {
 		events := (<-w.(*watchStream).ch).Events
 		assert.Len(t, events, 1)
-		assert.Equal(t, []mvccpb.Event{
+		want := []*mvccpb.Event{
 			{
-				Type: mvccpb.PUT,
+				Type: mvccpb.Event_PUT,
 				Kv: &mvccpb.KeyValue{
 					Key:            testKey,
 					CreateRevision: 2,
@@ -332,7 +333,10 @@ func TestSyncWatchers(t *testing.T) {
 					Value:          testValue,
 				},
 			},
-		}, events)
+		}
+		if diff := cmp.Diff(want, events, protocmp.Transform()); diff != "" {
+			t.Fatalf("unexpected events (-want +got):\n%s", diff)
+		}
 	}
 }
 
@@ -352,9 +356,9 @@ func TestRangeEvents(t *testing.T) {
 	s.Put(foo3, value, lease.NoLease)
 	s.DeleteRange(foo1, foo3) // Deletes "foo1" and "foo2" generating 2 events
 
-	expectEvents := []mvccpb.Event{
+	expectEvents := []*mvccpb.Event{
 		{
-			Type: mvccpb.PUT,
+			Type: mvccpb.Event_PUT,
 			Kv: &mvccpb.KeyValue{
 				Key:            foo1,
 				CreateRevision: 2,
@@ -364,7 +368,7 @@ func TestRangeEvents(t *testing.T) {
 			},
 		},
 		{
-			Type: mvccpb.PUT,
+			Type: mvccpb.Event_PUT,
 			Kv: &mvccpb.KeyValue{
 				Key:            foo2,
 				CreateRevision: 3,
@@ -374,7 +378,7 @@ func TestRangeEvents(t *testing.T) {
 			},
 		},
 		{
-			Type: mvccpb.PUT,
+			Type: mvccpb.Event_PUT,
 			Kv: &mvccpb.KeyValue{
 				Key:            foo3,
 				CreateRevision: 4,
@@ -384,14 +388,14 @@ func TestRangeEvents(t *testing.T) {
 			},
 		},
 		{
-			Type: mvccpb.DELETE,
+			Type: mvccpb.Event_DELETE,
 			Kv: &mvccpb.KeyValue{
 				Key:         foo1,
 				ModRevision: 5,
 			},
 		},
 		{
-			Type: mvccpb.DELETE,
+			Type: mvccpb.Event_DELETE,
 			Kv: &mvccpb.KeyValue{
 				Key:         foo2,
 				ModRevision: 5,
@@ -402,16 +406,17 @@ func TestRangeEvents(t *testing.T) {
 	tcs := []struct {
 		minRev       int64
 		maxRev       int64
-		expectEvents []mvccpb.Event
+		expectEvents []*mvccpb.Event
 	}{
 		// maxRev, top to bottom
-		{minRev: 2, maxRev: 6, expectEvents: expectEvents[0:5]},
-		{minRev: 2, maxRev: 5, expectEvents: expectEvents[0:3]},
-		{minRev: 2, maxRev: 4, expectEvents: expectEvents[0:2]},
-		{minRev: 2, maxRev: 3, expectEvents: expectEvents[0:1]},
-		{minRev: 2, maxRev: 2, expectEvents: expectEvents[0:0]},
+		{minRev: -1, maxRev: 6, expectEvents: expectEvents[0:5]},
+		{minRev: -1, maxRev: 5, expectEvents: expectEvents[0:3]},
+		{minRev: -1, maxRev: 4, expectEvents: expectEvents[0:2]},
+		{minRev: -1, maxRev: 3, expectEvents: expectEvents[0:1]},
+		{minRev: -1, maxRev: 2, expectEvents: expectEvents[0:0]},
 
 		// minRev, bottom to top
+		{minRev: -1, maxRev: 6, expectEvents: expectEvents[0:5]},
 		{minRev: 2, maxRev: 6, expectEvents: expectEvents[0:5]},
 		{minRev: 3, maxRev: 6, expectEvents: expectEvents[1:5]},
 		{minRev: 4, maxRev: 6, expectEvents: expectEvents[2:5]},
@@ -429,15 +434,19 @@ func TestRangeEvents(t *testing.T) {
 		{minRev: 5, maxRev: 6, expectEvents: expectEvents[3:5]},
 		{minRev: 6, maxRev: 6, expectEvents: expectEvents[5:5]},
 	}
-	// reuse the evs to test rangeEventsWithReuse
-	var evs []mvccpb.Event
 	for i, tc := range tcs {
 		t.Run(fmt.Sprintf("%d rangeEvents(%d, %d)", i, tc.minRev, tc.maxRev), func(t *testing.T) {
-			assert.ElementsMatch(t, tc.expectEvents, rangeEvents(lg, b, tc.minRev, tc.maxRev))
-			evs = rangeEventsWithReuse(lg, b, evs, tc.minRev, tc.maxRev)
-			assert.ElementsMatch(t, tc.expectEvents, evs)
+			if diff := cmp.Diff(tc.expectEvents, rangeEvents(lg, b, tc.minRev, tc.maxRev, fakeContains{}), protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Fatalf("unexpected events (-want +got):\n%s", diff)
+			}
 		})
 	}
+}
+
+type fakeContains struct{}
+
+func (f fakeContains) contains(string) bool {
+	return true
 }
 
 // TestWatchCompacted tests a watcher that watches on a compacted revision.
@@ -462,7 +471,7 @@ func TestWatchCompacted(t *testing.T) {
 	w := s.NewWatchStream()
 	defer w.Close()
 
-	wt, _ := w.Watch(0, testKey, nil, compactRev-1)
+	wt, _ := w.Watch(t.Context(), 0, testKey, nil, compactRev-1)
 	select {
 	case resp := <-w.Chan():
 		if resp.WatchID != wt {
@@ -508,13 +517,13 @@ func TestWatchNoEventLossOnCompact(t *testing.T) {
 		2: 6, // create unsyncd watchers with compactRev < startRev < currentRev
 	}
 	for id, startRev := range watchers {
-		_, err := w.Watch(id, testKey, nil, startRev)
+		_, err := w.Watch(t.Context(), id, testKey, nil, startRev)
 		require.NoError(t, err)
 	}
 	// fill up w.Chan() with 1 buf via 2 compacted watch response
 	sImpl, ok := s.(*watchableStore)
 	require.Truef(t, ok, "TestWatchNoEventLossOnCompact: needs a WatchableKV implementation")
-	sImpl.syncWatchers([]mvccpb.Event{})
+	sImpl.syncWatchers()
 
 	for len(watchers) > 0 {
 		resp := <-w.Chan()
@@ -547,7 +556,7 @@ func TestWatchFutureRev(t *testing.T) {
 	defer w.Close()
 
 	wrev := int64(10)
-	w.Watch(0, testKey, nil, wrev)
+	w.Watch(t.Context(), 0, testKey, nil, wrev)
 
 	for i := 0; i < 10; i++ {
 		rev := s.Put(testKey, testValue, lease.NoLease)
@@ -601,43 +610,43 @@ func testWatchRestore(t *testing.T, delayBeforeRestore, delayAfterRestore time.D
 	tcs := []struct {
 		name          string
 		startRevision int64
-		wantEvents    []mvccpb.Event
+		wantEvents    []*mvccpb.Event
 	}{
 		{
 			name:          "zero revision",
 			startRevision: 0,
-			wantEvents: []mvccpb.Event{
-				{Type: mvccpb.PUT, Kv: &mvccpb.KeyValue{Key: testKey, Value: testValue, CreateRevision: 2, ModRevision: 2, Version: 1}},
-				{Type: mvccpb.DELETE, Kv: &mvccpb.KeyValue{Key: testKey, ModRevision: 3}},
+			wantEvents: []*mvccpb.Event{
+				{Type: mvccpb.Event_PUT, Kv: &mvccpb.KeyValue{Key: testKey, Value: testValue, CreateRevision: 2, ModRevision: 2, Version: 1}},
+				{Type: mvccpb.Event_DELETE, Kv: &mvccpb.KeyValue{Key: testKey, ModRevision: 3}},
 			},
 		},
 		{
-			name:          "revsion before first write",
+			name:          "revision before first write",
 			startRevision: 1,
-			wantEvents: []mvccpb.Event{
-				{Type: mvccpb.PUT, Kv: &mvccpb.KeyValue{Key: testKey, Value: testValue, CreateRevision: 2, ModRevision: 2, Version: 1}},
-				{Type: mvccpb.DELETE, Kv: &mvccpb.KeyValue{Key: testKey, ModRevision: 3}},
+			wantEvents: []*mvccpb.Event{
+				{Type: mvccpb.Event_PUT, Kv: &mvccpb.KeyValue{Key: testKey, Value: testValue, CreateRevision: 2, ModRevision: 2, Version: 1}},
+				{Type: mvccpb.Event_DELETE, Kv: &mvccpb.KeyValue{Key: testKey, ModRevision: 3}},
 			},
 		},
 		{
 			name:          "revision of first write",
 			startRevision: 2,
-			wantEvents: []mvccpb.Event{
-				{Type: mvccpb.PUT, Kv: &mvccpb.KeyValue{Key: testKey, Value: testValue, CreateRevision: 2, ModRevision: 2, Version: 1}},
-				{Type: mvccpb.DELETE, Kv: &mvccpb.KeyValue{Key: testKey, ModRevision: 3}},
+			wantEvents: []*mvccpb.Event{
+				{Type: mvccpb.Event_PUT, Kv: &mvccpb.KeyValue{Key: testKey, Value: testValue, CreateRevision: 2, ModRevision: 2, Version: 1}},
+				{Type: mvccpb.Event_DELETE, Kv: &mvccpb.KeyValue{Key: testKey, ModRevision: 3}},
 			},
 		},
 		{
 			name:          "current revision",
 			startRevision: 3,
-			wantEvents: []mvccpb.Event{
-				{Type: mvccpb.DELETE, Kv: &mvccpb.KeyValue{Key: testKey, ModRevision: 3}},
+			wantEvents: []*mvccpb.Event{
+				{Type: mvccpb.Event_DELETE, Kv: &mvccpb.KeyValue{Key: testKey, ModRevision: 3}},
 			},
 		},
 		{
 			name:          "future revision",
 			startRevision: 4,
-			wantEvents:    []mvccpb.Event{},
+			wantEvents:    []*mvccpb.Event{},
 		},
 	}
 	watchers := []WatchStream{}
@@ -645,7 +654,7 @@ func testWatchRestore(t *testing.T, delayBeforeRestore, delayAfterRestore time.D
 		w := s.NewWatchStream()
 		defer w.Close()
 		watchers = append(watchers, w)
-		w.Watch(WatchID(i+1), testKey, nil, tc.startRevision)
+		w.Watch(t.Context(), WatchID(i+1), testKey, nil, tc.startRevision)
 	}
 
 	s.Put(testKey, testValue, lease.NoLease)
@@ -657,15 +666,15 @@ func testWatchRestore(t *testing.T, delayBeforeRestore, delayAfterRestore time.D
 	for i, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			events := readEventsForSecond(t, watchers[i].Chan())
-			if diff := cmp.Diff(tc.wantEvents, events); diff != "" {
+			if diff := cmp.Diff(tc.wantEvents, events, protocmp.Transform()); diff != "" {
 				t.Errorf("unexpected events (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-func readEventsForSecond(t *testing.T, ws <-chan WatchResponse) []mvccpb.Event {
-	events := []mvccpb.Event{}
+func readEventsForSecond(t *testing.T, ws <-chan WatchResponse) []*mvccpb.Event {
+	events := []*mvccpb.Event{}
 	deadline := time.After(time.Second)
 	for {
 		select {
@@ -737,7 +746,7 @@ func TestWatchBatchUnsynced(t *testing.T) {
 			w := s.NewWatchStream()
 			defer w.Close()
 
-			w.Watch(0, v, nil, 1)
+			w.Watch(t.Context(), 0, v, nil, 1)
 			var revisionBatches [][]int64
 			eventCount := 0
 			for eventCount < tc.revisions*tc.eventsPerRevision {
@@ -767,32 +776,32 @@ func TestNewMapwatcherToEventMap(t *testing.T) {
 
 	ws := []*watcher{{key: k0}, {key: k1}, {key: k2}}
 
-	evs := []mvccpb.Event{
+	evs := []*mvccpb.Event{
 		{
-			Type: mvccpb.PUT,
+			Type: mvccpb.Event_PUT,
 			Kv:   &mvccpb.KeyValue{Key: k0, Value: v0},
 		},
 		{
-			Type: mvccpb.PUT,
+			Type: mvccpb.Event_PUT,
 			Kv:   &mvccpb.KeyValue{Key: k1, Value: v1},
 		},
 		{
-			Type: mvccpb.PUT,
+			Type: mvccpb.Event_PUT,
 			Kv:   &mvccpb.KeyValue{Key: k2, Value: v2},
 		},
 	}
 
 	tests := []struct {
 		sync []*watcher
-		evs  []mvccpb.Event
+		evs  []*mvccpb.Event
 
-		wwe map[*watcher][]mvccpb.Event
+		wwe map[*watcher][]*mvccpb.Event
 	}{
 		// no watcher in sync, some events should return empty wwe
 		{
 			nil,
 			evs,
-			map[*watcher][]mvccpb.Event{},
+			map[*watcher][]*mvccpb.Event{},
 		},
 
 		// one watcher in sync, one event that does not match the key of that
@@ -800,7 +809,7 @@ func TestNewMapwatcherToEventMap(t *testing.T) {
 		{
 			[]*watcher{ws[2]},
 			evs[:1],
-			map[*watcher][]mvccpb.Event{},
+			map[*watcher][]*mvccpb.Event{},
 		},
 
 		// one watcher in sync, one event that matches the key of that
@@ -808,7 +817,7 @@ func TestNewMapwatcherToEventMap(t *testing.T) {
 		{
 			[]*watcher{ws[1]},
 			evs[1:2],
-			map[*watcher][]mvccpb.Event{
+			map[*watcher][]*mvccpb.Event{
 				ws[1]: evs[1:2],
 			},
 		},
@@ -819,7 +828,7 @@ func TestNewMapwatcherToEventMap(t *testing.T) {
 		{
 			[]*watcher{ws[0], ws[2]},
 			evs[2:],
-			map[*watcher][]mvccpb.Event{
+			map[*watcher][]*mvccpb.Event{
 				ws[2]: evs[2:],
 			},
 		},
@@ -829,7 +838,7 @@ func TestNewMapwatcherToEventMap(t *testing.T) {
 		{
 			[]*watcher{ws[0], ws[1]},
 			evs[:2],
-			map[*watcher][]mvccpb.Event{
+			map[*watcher][]*mvccpb.Event{
 				ws[0]: evs[:1],
 				ws[1]: evs[1:2],
 			},
@@ -851,8 +860,8 @@ func TestNewMapwatcherToEventMap(t *testing.T) {
 			if len(eb.evs) != len(tt.wwe[w]) {
 				t.Errorf("#%d: len(eb.evs) got = %d, want = %d", i, len(eb.evs), len(tt.wwe[w]))
 			}
-			if !reflect.DeepEqual(eb.evs, tt.wwe[w]) {
-				t.Errorf("#%d: reflect.DeepEqual events got = %v, want = true", i, false)
+			if diff := cmp.Diff(tt.wwe[w], eb.evs, protocmp.Transform()); diff != "" {
+				t.Errorf("#%d: events mismatch (-want +got):\n%s", i, diff)
 			}
 		}
 	}
@@ -882,7 +891,7 @@ func TestWatchVictims(t *testing.T) {
 	for i := 0; i < numWatches; i++ {
 		go func() {
 			w := s.NewWatchStream()
-			w.Watch(0, testKey, nil, 1)
+			w.Watch(t.Context(), 0, testKey, nil, 1)
 			defer func() {
 				w.Close()
 				wg.Done()
@@ -954,7 +963,7 @@ func TestStressWatchCancelClose(t *testing.T) {
 			w := s.NewWatchStream()
 			ids := make([]WatchID, 10)
 			for i := range ids {
-				ids[i], _ = w.Watch(0, testKey, nil, 0)
+				ids[i], _ = w.Watch(t.Context(), 0, testKey, nil, 0)
 			}
 			<-readyc
 			wg.Add(1 + len(ids)/2)

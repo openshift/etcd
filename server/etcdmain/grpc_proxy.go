@@ -29,15 +29,13 @@ import (
 	"path/filepath"
 	"time"
 
-	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
-	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/soheilhy/cmux"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapgrpc"
-	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/keepalive"
@@ -85,6 +83,7 @@ var (
 	grpcProxyListenCert          string
 	grpcProxyListenKey           string
 	grpcProxyListenCipherSuites  []string
+	grpcProxyListenCurves        []string
 	grpcProxyListenAutoTLS       bool
 	grpcProxyListenCRL           string
 	grpcProxyListenTLSMinVersion string
@@ -170,6 +169,7 @@ func newGRPCProxyStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&grpcProxyListenKey, "key-file", "", "identify secure connections to the proxy using this TLS key file")
 	cmd.Flags().StringVar(&grpcProxyListenCA, "trusted-ca-file", "", "verify certificates of TLS-enabled secure proxy using this CA bundle")
 	cmd.Flags().StringSliceVar(&grpcProxyListenCipherSuites, "listen-cipher-suites", grpcProxyListenCipherSuites, "Comma-separated list of supported TLS cipher suites between client/proxy (empty will be auto-populated by Go).")
+	cmd.Flags().StringSliceVar(&grpcProxyListenCurves, "listen-curve-preferences", grpcProxyListenCurves, "Comma-separated list of supported elliptic curves between client/proxy (empty will be auto-populated by Go).")
 	cmd.Flags().BoolVar(&grpcProxyListenAutoTLS, "auto-tls", false, "proxy TLS using generated certificates")
 	cmd.Flags().StringVar(&grpcProxyListenCRL, "client-crl-file", "", "proxy client certificate revocation list file.")
 	cmd.Flags().UintVar(&selfSignedCertValidity, "self-signed-cert-validity", 1, "The validity period of the proxy certificates, unit is year")
@@ -224,6 +224,17 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 			}
 			tlsInfo.CipherSuites = cs
 		}
+		if len(grpcProxyListenCurves) > 0 {
+			curveIDs := make([]tls.CurveID, len(grpcProxyListenCurves))
+			for i, name := range grpcProxyListenCurves {
+				curveID, ok := tlsutil.GetCurveID(name)
+				if !ok {
+					log.Fatalf("unexpected TLS curve %q", name)
+				}
+				curveIDs[i] = curveID
+			}
+			tlsInfo.ListenCurvePreferences = curveIDs
+		}
 		if grpcProxyListenTLSMinVersion != "" {
 			version, err := tlsutil.GetTLSVersion(grpcProxyListenTLSMinVersion)
 			if err != nil {
@@ -244,50 +255,42 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 
 	m := mustListenCMux(lg, tlsInfo)
 	grpcl := m.Match(cmux.HTTP2())
+	httpl := mustMatchHTTPListener(m, tlsInfo)
 	defer func() {
 		grpcl.Close()
 		lg.Info("stop listening gRPC proxy client requests", zap.String("address", grpcProxyListenAddr))
 	}()
 
 	client := mustNewClient(lg)
+	grpcServer := newGRPCProxyServer(lg, client)
+
+	errc := make(chan error, 3)
+
+	// NOTE:
+	// Start gRPC + cmux before creating proxyClient.
+	//
+	// proxyClient dials the proxy endpoint with a 5-second timeout. If cmux is not
+	// serving yet, the self-dial can time out because the gRPC path is not being
+	// accepted/dispatched.
+	//
+	// It is safe to start cmux before the HTTP server goroutine: HTTP has already
+	// been matched/registered with cmux, so accepted HTTP connections are queued
+	// and served once http.Serve starts.
+	startServe(errc, func() error { return grpcServer.Serve(grpcl) })
+	startServe(errc, m.Serve)
 
 	// The proxy client is used for self-healthchecking.
 	// TODO: The mechanism should be refactored to use internal connection.
-	var proxyClient *clientv3.Client
-	if grpcProxyAdvertiseClientURL != "" {
-		proxyClient = mustNewProxyClient(lg, tlsInfo)
-	}
+	//
+	// Create it after gRPC/cmux serving goroutines have started
+	proxyClient := newProxyHealthClient(lg, tlsInfo)
+
 	httpClient := mustNewHTTPClient()
+	srvhttp := mustHTTPServer(lg, tlsInfo, httpClient, client, proxyClient)
 
-	srvhttp, httpl := mustHTTPListener(lg, m, tlsInfo, client, proxyClient)
+	startServe(errc, func() error { return srvhttp.Serve(httpl) })
 
-	if err := http2.ConfigureServer(srvhttp, &http2.Server{
-		MaxConcurrentStreams: maxConcurrentStreams,
-	}); err != nil {
-		lg.Fatal("Failed to configure the http server", zap.Error(err))
-	}
-
-	errc := make(chan error, 3)
-	go func() { errc <- newGRPCProxyServer(lg, client).Serve(grpcl) }()
-	go func() { errc <- srvhttp.Serve(httpl) }()
-	go func() { errc <- m.Serve() }()
-	if len(grpcProxyMetricsListenAddr) > 0 {
-		mhttpl := mustMetricsListener(lg, tlsInfo)
-		go func() {
-			mux := http.NewServeMux()
-			grpcproxy.HandleMetrics(mux, httpClient, client.Endpoints())
-			grpcproxy.HandleHealth(lg, mux, client)
-			grpcproxy.HandleProxyMetrics(mux)
-			grpcproxy.HandleProxyHealth(lg, mux, proxyClient)
-			lg.Info("gRPC proxy server metrics URL serving")
-			herr := http.Serve(mhttpl, mux)
-			if herr != nil {
-				lg.Fatal("gRPC proxy server metrics URL returned", zap.Error(herr))
-			} else {
-				lg.Info("gRPC proxy server metrics URL returned")
-			}
-		}()
-	}
+	maybeServeMetrics(lg, tlsInfo, httpClient, client, proxyClient)
 
 	lg.Info("started gRPC proxy", zap.String("address", grpcProxyListenAddr))
 
@@ -378,6 +381,13 @@ func mustNewProxyClient(lg *zap.Logger, tls *transport.TLSInfo) *clientv3.Client
 	}
 	lg.Info("create proxy client", zap.String("grpcProxyAdvertiseClientURL", grpcProxyAdvertiseClientURL))
 	return client
+}
+
+func newProxyHealthClient(lg *zap.Logger, tls *transport.TLSInfo) *clientv3.Client {
+	if grpcProxyAdvertiseClientURL == "" {
+		return nil
+	}
+	return mustNewProxyClient(lg, tls)
 }
 
 func newProxyClientCfg(lg *zap.Logger, eps []string, tls *transport.TLSInfo) (*clientv3.Config, error) {
@@ -504,8 +514,6 @@ func newGRPCProxyServer(lg *zap.Logger, client *clientv3.Client) *grpc.Server {
 	electionp := grpcproxy.NewElectionProxy(client)
 	lockp := grpcproxy.NewLockProxy(client)
 
-	alwaysLoggingDeciderServer := func(ctx context.Context, fullMethodName string, servingObject any) bool { return true }
-
 	serverMetrics := grpc_prometheus.NewServerMetrics()
 	prometheus.MustRegister(serverMetrics)
 
@@ -517,12 +525,10 @@ func newGRPCProxyServer(lg *zap.Logger, client *clientv3.Client) *grpc.Server {
 	}
 	if grpcProxyEnableLogging {
 		grpcChainStreamList = append(grpcChainStreamList,
-			grpc_ctxtags.StreamServerInterceptor(),
-			grpc_zap.PayloadStreamServerInterceptor(lg, alwaysLoggingDeciderServer),
+			interceptors.StreamServerInterceptor(reportable(lg)),
 		)
 		grpcChainUnaryList = append(grpcChainUnaryList,
-			grpc_ctxtags.UnaryServerInterceptor(),
-			grpc_zap.PayloadUnaryServerInterceptor(lg, alwaysLoggingDeciderServer),
+			interceptors.UnaryServerInterceptor(reportable(lg)),
 		)
 	}
 
@@ -559,14 +565,20 @@ func newGRPCProxyServer(lg *zap.Logger, client *clientv3.Client) *grpc.Server {
 	return server
 }
 
-func mustHTTPListener(lg *zap.Logger, m cmux.CMux, tlsinfo *transport.TLSInfo, c *clientv3.Client, proxy *clientv3.Client) (*http.Server, net.Listener) {
-	httpClient := mustNewHTTPClient()
+func mustMatchHTTPListener(m cmux.CMux, tlsinfo *transport.TLSInfo) net.Listener {
+	if tlsinfo == nil {
+		return m.Match(cmux.HTTP1())
+	}
+	return m.Match(cmux.Any())
+}
+
+func mustHTTPServer(lg *zap.Logger, tlsinfo *transport.TLSInfo, httpClient *http.Client, c *clientv3.Client, proxyClient *clientv3.Client) *http.Server {
 	httpmux := http.NewServeMux()
 	httpmux.HandleFunc("/", http.NotFound)
 	grpcproxy.HandleMetrics(httpmux, httpClient, c.Endpoints())
 	grpcproxy.HandleHealth(lg, httpmux, c)
 	grpcproxy.HandleProxyMetrics(httpmux)
-	grpcproxy.HandleProxyHealth(lg, httpmux, proxy)
+	grpcproxy.HandleProxyHealth(lg, httpmux, proxyClient)
 	if grpcProxyEnablePprof {
 		for p, h := range debugutil.PProfHandlers() {
 			httpmux.Handle(p, h)
@@ -578,8 +590,15 @@ func mustHTTPListener(lg *zap.Logger, m cmux.CMux, tlsinfo *transport.TLSInfo, c
 		ErrorLog: log.New(io.Discard, "net/http", 0),
 	}
 
+	// net/http replaces any MaxConcurrentStreams above math.MaxInt32 with its
+	// default (250), so clamp the uint32 value (default math.MaxUint32) to keep
+	// it effectively unlimited.
+	srvhttp.HTTP2 = &http.HTTP2Config{
+		MaxConcurrentStreams: int(min(maxConcurrentStreams, math.MaxInt32)),
+	}
+
 	if tlsinfo == nil {
-		return srvhttp, m.Match(cmux.HTTP1())
+		return srvhttp
 	}
 
 	srvTLS, err := tlsinfo.ServerConfig()
@@ -587,7 +606,32 @@ func mustHTTPListener(lg *zap.Logger, m cmux.CMux, tlsinfo *transport.TLSInfo, c
 		lg.Fatal("failed to set up TLS", zap.Error(err))
 	}
 	srvhttp.TLSConfig = srvTLS
-	return srvhttp, m.Match(cmux.Any())
+	return srvhttp
+}
+
+func maybeServeMetrics(lg *zap.Logger, tlsinfo *transport.TLSInfo, httpClient *http.Client, c *clientv3.Client, proxyClient *clientv3.Client) {
+	if len(grpcProxyMetricsListenAddr) == 0 {
+		return
+	}
+	mhttpl := mustMetricsListener(lg, tlsinfo)
+	go func() {
+		mux := http.NewServeMux()
+		grpcproxy.HandleMetrics(mux, httpClient, c.Endpoints())
+		grpcproxy.HandleHealth(lg, mux, c)
+		grpcproxy.HandleProxyMetrics(mux)
+		grpcproxy.HandleProxyHealth(lg, mux, proxyClient)
+		lg.Info("gRPC proxy server metrics URL serving")
+		herr := http.Serve(mhttpl, mux)
+		if herr != nil {
+			lg.Fatal("gRPC proxy server metrics URL returned", zap.Error(herr))
+		} else {
+			lg.Info("gRPC proxy server metrics URL returned")
+		}
+	}()
+}
+
+func startServe(errc chan<- error, serve func() error) {
+	go func() { errc <- serve() }()
 }
 
 func mustNewHTTPClient() *http.Client {

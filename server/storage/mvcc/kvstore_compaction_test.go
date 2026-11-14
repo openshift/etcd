@@ -15,7 +15,6 @@
 package mvcc
 
 import (
-	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -139,9 +138,9 @@ func TestCompactAllAndRestore(t *testing.T) {
 	if s1.Rev() != rev {
 		t.Errorf("rev = %v, want %v", s1.Rev(), rev)
 	}
-	_, err = s1.Range(context.TODO(), []byte("foo"), nil, RangeOptions{})
+	_, err = s1.Range(t.Context(), []byte("foo"), nil, RangeOptions{})
 	if err != nil {
-		t.Errorf("unexpect range error %v", err)
+		t.Errorf("unexpected range error %v", err)
 	}
 	err = s1.Close()
 	if err != nil {

@@ -30,7 +30,7 @@ import (
 
 func TestAuthCluster(t *testing.T) {
 	e2e.BeforeTest(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	epc, err := e2e.NewEtcdProcessCluster(ctx, t,
@@ -58,7 +58,7 @@ func TestAuthCluster(t *testing.T) {
 
 	// write more than SnapshotCount keys to single leader to make sure snapshot is created
 	for i := 0; i <= 10; i++ {
-		if err := epc.Etcdctl(testUserClientOpts).Put(ctx, fmt.Sprintf("/test/%d", i), "test", config.PutOptions{}); err != nil {
+		if _, err := epc.Etcdctl(testUserClientOpts).Put(ctx, fmt.Sprintf("/test/%d", i), "test", config.PutOptions{}); err != nil {
 			t.Fatalf("failed to Put (%v)", err)
 		}
 	}
@@ -72,7 +72,7 @@ func TestAuthCluster(t *testing.T) {
 	endpoints := epc.EndpointsGRPC()
 	assert.Len(t, endpoints, 2)
 	for _, endpoint := range epc.EndpointsGRPC() {
-		if err := epc.Etcdctl(testUserClientOpts, e2e.WithEndpoints([]string{endpoint})).Put(ctx, "/test/key", endpoint, config.PutOptions{}); err != nil {
+		if _, err := epc.Etcdctl(testUserClientOpts, e2e.WithEndpoints([]string{endpoint})).Put(ctx, "/test/key", endpoint, config.PutOptions{}); err != nil {
 			t.Fatalf("failed to write to Put to %q (%v)", endpoint, err)
 		}
 	}

@@ -35,6 +35,14 @@ const (
 	// of code conflicts because changes are more likely to be scattered
 	// across the file.
 
+	// NonBlockingDefrag enables a non-blocking defragmentation algorithm that
+	// allows writes to continue during the bulk data copy phase. A write journal
+	// captures mutations during the copy; only the journal replay and database
+	// swap require the write lock, reducing disruption from O(db_size) to
+	// O(writes_during_copy).
+	// owner: @dusk125
+	// alpha: v3.7
+	NonBlockingDefrag featuregate.Feature = "NonBlockingDefrag"
 	// StopGRPCServiceOnDefrag enables etcd gRPC service to stop serving client requests on defragmentation.
 	// owner: @chaochn47
 	// alpha: v3.6
@@ -74,10 +82,21 @@ const (
 	// alpha: v3.6
 	// main PR: https://github.com/etcd-io/etcd/pull/17661
 	SetMemberLocalAddr featuregate.Feature = "SetMemberLocalAddr"
+	// FastLeaseKeepAlive enables lease renewal to skip waiting for the applied index.
+	// owner: @aaronjzhang
+	// beta: v3.7
+	// main PR: https://github.com/etcd-io/etcd/pull/20589
+	FastLeaseKeepAlive featuregate.Feature = "FastLeaseKeepAlive"
+	// PriorityRequest enables certain kinds of requests(e.g. LeaseRevoke) having higher priority to be applied under overload conditions.
+	// owner: @silentred
+	// alpha: v3.7
+	// main PR: https://github.com/etcd-io/etcd/pull/20492
+	PriorityRequest featuregate.Feature = "PriorityRequest"
 )
 
 var (
 	DefaultEtcdServerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
+		NonBlockingDefrag:            {Default: false, PreRelease: featuregate.Alpha},
 		StopGRPCServiceOnDefrag:      {Default: false, PreRelease: featuregate.Alpha},
 		InitialCorruptCheck:          {Default: false, PreRelease: featuregate.Alpha},
 		CompactHashCheck:             {Default: false, PreRelease: featuregate.Alpha},

@@ -18,12 +18,12 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/tests/v3/framework/integration"
@@ -33,7 +33,7 @@ func TestTLSClientCipherSuitesValid(t *testing.T)    { testTLSCipherSuites(t, tr
 func TestTLSClientCipherSuitesMismatch(t *testing.T) { testTLSCipherSuites(t, false) }
 
 // testTLSCipherSuites ensures mismatching client-side cipher suite
-// fail TLS handshake with the server.
+// fail the range request to the server.
 func testTLSCipherSuites(t *testing.T, valid bool) {
 	integration.BeforeTest(t)
 
@@ -66,18 +66,78 @@ func testTLSCipherSuites(t *testing.T, valid bool) {
 	cli, cerr := integration.NewClient(t, clientv3.Config{
 		Endpoints:   []string{clus.Members[0].GRPCURL},
 		DialTimeout: time.Second,
-		DialOptions: []grpc.DialOption{grpc.WithBlock()},
 		TLS:         cc,
 	})
-	if cli != nil {
-		cli.Close()
+	require.NoError(t, cerr)
+	defer func() {
+		require.NoError(t, cli.Close())
+	}()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	_, rerr := cli.Get(ctx, "foo")
+	cancel()
+	if valid {
+		require.NoError(t, rerr)
+	} else {
+		if !errors.Is(rerr, context.DeadlineExceeded) {
+			t.Fatalf("expected %v with TLS handshake failure, got %v", context.DeadlineExceeded, rerr)
+		}
 	}
-	if !valid && !errors.Is(cerr, context.DeadlineExceeded) {
-		t.Fatalf("expected %v with TLS handshake failure, got %v", context.DeadlineExceeded, cerr)
+}
+
+func TestTLSClientListenCurvePreferencesValid(t *testing.T) {
+	testTLSListenCurvePreferences(t, true)
+}
+
+func TestTLSClientListenCurvePreferencesMismatch(t *testing.T) {
+	testTLSListenCurvePreferences(t, false)
+}
+
+// testTLSListenCurvePreferences ensures that a client offering only curves the
+// server does not accept fails the TLS handshake, while a client sharing a curve
+// with the server succeeds.
+func testTLSListenCurvePreferences(t *testing.T, valid bool) {
+	integration.BeforeTest(t)
+
+	serverCurves := []tls.CurveID{tls.X25519, tls.CurveP256}
+	unsupportedCurves := []tls.CurveID{tls.CurveP384, tls.CurveP521}
+
+	tlsConfig := integration.TestTLSInfo
+	tlsConfig.ListenCurvePreferences = serverCurves
+	cluster := integration.NewCluster(
+		t, &integration.ClusterConfig{
+			Size:      1,
+			ClientTLS: &tlsConfig,
+		},
+	)
+	defer cluster.Terminate(t)
+
+	clientConfig, err := tlsConfig.ClientConfig()
+	require.NoError(t, err)
+
+	// we are exercising curve negotiation, not certificate validity: the curve
+	// check happens during the handshake regardless of cert verification.
+	clientConfig.InsecureSkipVerify = true
+	clientConfig.CurvePreferences = serverCurves
+	if !valid {
+		clientConfig.CurvePreferences = unsupportedCurves
 	}
-	if valid && cerr != nil {
-		t.Fatalf("expected TLS handshake success, got %v", cerr)
+
+	conn, err := tls.DialWithDialer(
+		&net.Dialer{Timeout: time.Second},
+		cluster.Members[0].GRPCListener.Addr().Network(),
+		cluster.Members[0].GRPCListener.Addr().String(),
+		clientConfig,
+	)
+
+	if !valid {
+		// server rejects the handshake because no curve is shared.
+		require.ErrorContains(t, err, "tls: handshake failure")
+		return
 	}
+
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
 }
 
 func TestTLSMinMaxVersion(t *testing.T) {
@@ -129,12 +189,11 @@ func TestTLSMinMaxVersion(t *testing.T) {
 			cli, cerr := integration.NewClient(t, clientv3.Config{
 				Endpoints:   []string{clus.Members[0].GRPCURL},
 				DialTimeout: time.Second,
-				DialOptions: []grpc.DialOption{grpc.WithBlock()},
 				TLS:         cc,
 			})
 			if cerr != nil {
 				assert.Truef(t, tt.expectError, "got TLS handshake error while expecting success: %v", cerr)
-				assert.Equal(t, context.DeadlineExceeded, cerr)
+				assert.ErrorIs(t, cerr, context.DeadlineExceeded)
 				return
 			}
 

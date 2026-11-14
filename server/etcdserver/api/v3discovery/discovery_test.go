@@ -496,7 +496,7 @@ func TestRegisterSelf(t *testing.T) {
 			}
 
 			if err := d.registerSelf(tc.expectedRegValue); err != nil {
-				t.Errorf("Error occuring on register member self: %v", err)
+				t.Errorf("Error occurring on register member self: %v", err)
 			}
 
 			if fkv.retries != 0 {
@@ -745,6 +745,10 @@ func (fkv *fakeBaseKV) Put(ctx context.Context, key string, val string, opts ...
 }
 
 func (fkv *fakeBaseKV) Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+	return nil, nil
+}
+
+func (fkv *fakeBaseKV) GetStream(ctx context.Context, key string, opts ...clientv3.OpOption) (clientv3.GetStreamChan, error) {
 	return nil, nil
 }
 

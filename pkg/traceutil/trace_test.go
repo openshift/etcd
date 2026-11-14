@@ -38,12 +38,12 @@ func TestGet(t *testing.T) {
 	}{
 		{
 			name:        "When the context does not have trace",
-			inputCtx:    context.TODO(),
+			inputCtx:    t.Context(),
 			outputTrace: TODO(),
 		},
 		{
 			name:        "When the context has trace",
-			inputCtx:    context.WithValue(context.Background(), TraceKey{}, traceForTest),
+			inputCtx:    context.WithValue(t.Context(), TraceKey{}, traceForTest),
 			outputTrace: traceForTest,
 		},
 	}
@@ -73,7 +73,7 @@ func TestCreate(t *testing.T) {
 		}
 	)
 
-	trace := New(op, nil, fields[0], fields[1])
+	_, trace := EnsureTrace(t.Context(), nil, op, fields[0], fields[1])
 	assert.Equalf(t, trace.operation, op, "Expected %v; Got %v", op, trace.operation)
 	for i, f := range trace.fields {
 		assert.Equalf(t, f.Key, fields[i].Key, "Expected %v; Got %v", fields[i].Key, f.Key)
@@ -93,10 +93,11 @@ func TestCreate(t *testing.T) {
 
 func TestLog(t *testing.T) {
 	tests := []struct {
-		name        string
-		trace       *Trace
-		fields      []Field
-		expectedMsg []string
+		name           string
+		trace          *Trace
+		fields         []Field
+		expectedMsg    []string
+		notExpectedMsg []string
 	}{
 		{
 			name: "When dump all logs",
@@ -135,12 +136,18 @@ func TestLog(t *testing.T) {
 				{"count", 1},
 			},
 			expectedMsg: []string{
-				"Test",
+				// stable message name
+				"\"trace\"",
+				// operation and trace_id emitted as structured fields
+				"\"operation\":\"Test\"",
+				"\"trace_id\":",
 				"msg1", "msg2",
 				"traceKey1:traceValue1", "count:1",
 				"stepKey1:stepValue1", "stepKey2:stepValue2",
 				"\"step_count\":2",
 			},
+			// step entries must not embed the trace ID inline
+			notExpectedMsg: []string{"trace["},
 		},
 		{
 			name: "When trace has subtrace",
@@ -178,13 +185,16 @@ func TestLog(t *testing.T) {
 				{"count", 1},
 			},
 			expectedMsg: []string{
-				"Test",
+				"\"trace\"",
+				"\"operation\":\"Test\"",
+				"\"trace_id\":",
 				"msg1", "msg2", "submsg",
 				"traceKey1:traceValue1", "count:1",
 				"stepKey1:stepValue1", "stepKey2:stepValue2", "subStepKey:subStepValue",
 				"beginSubTrace:true", "endSubTrace:true",
 				"\"step_count\":3",
 			},
+			notExpectedMsg: []string{"trace["},
 		},
 	}
 
@@ -208,6 +218,9 @@ func TestLog(t *testing.T) {
 
 			for _, msg := range tt.expectedMsg {
 				assert.Truef(t, bytes.Contains(data, []byte(msg)), "Expected to find %v in log", msg)
+			}
+			for _, msg := range tt.notExpectedMsg {
+				assert.Falsef(t, bytes.Contains(data, []byte(msg)), "Expected NOT to find %v in log", msg)
 			}
 		})
 	}

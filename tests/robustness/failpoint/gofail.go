@@ -32,6 +32,8 @@ import (
 
 var (
 	DefragBeforeCopyPanic                     Failpoint = goPanicFailpoint{"defragBeforeCopy", triggerDefrag{}, AnyMember}
+	DefragNonBlockingBeforeCopyPanic          Failpoint = goPanicFailpoint{"defragNonBlockingBeforeCopy", triggerDefrag{requireNonBlockingDefrag: true}, AnyMember}
+	DefragBeforeReplayPanic                   Failpoint = goPanicFailpoint{"defragBeforeReplay", triggerDefrag{requireNonBlockingDefrag: true}, AnyMember}
 	DefragBeforeRenamePanic                   Failpoint = goPanicFailpoint{"defragBeforeRename", triggerDefrag{}, AnyMember}
 	BeforeCommitPanic                         Failpoint = goPanicFailpoint{"beforeCommit", nil, AnyMember}
 	AfterCommitPanic                          Failpoint = goPanicFailpoint{"afterCommit", nil, AnyMember}
@@ -194,7 +196,7 @@ func (f killAndGofailSleep) Inject(ctx context.Context, t *testing.T, lg *zap.Lo
 	if err != nil {
 		return nil, err
 	}
-	// TODO: Check gofail status (https://github.com/etcd-io/gofail/pull/47) and wait for sleep to beis executed at least once.
+	// TODO: Check gofail status (https://github.com/etcd-io/gofail/pull/47) and wait for sleep to be executed at least once.
 	return nil, nil
 }
 

@@ -577,14 +577,10 @@ func NewConfig() *Config {
 		LogRotationConfigJSON: DefaultLogRotationConfig,
 		EnableGRPCGateway:     true,
 
-		ExperimentalDowngradeCheckTime: DefaultDowngradeCheckTime,
-		DowngradeCheckTime:             DefaultDowngradeCheckTime,
-		MemoryMlock:                    false,
-		// TODO: delete in v3.7
-		ExperimentalMemoryMlock:             false,
-		ExperimentalStopGRPCServiceOnDefrag: false,
-		MaxLearners:                         membership.DefaultMaxLearners,
-		DefragJournalMaxOps:                 backend.DefaultDefragJournalMaxOps,
+		DowngradeCheckTime:  DefaultDowngradeCheckTime,
+		MemoryMlock:         false,
+		MaxLearners:         membership.DefaultMaxLearners,
+		DefragJournalMaxOps: backend.DefaultDefragJournalMaxOps,
 
 		DistributedTracingAddress:     DefaultDistributedTracingAddress,
 		DistributedTracingServiceName: DefaultDistributedTracingServiceName,

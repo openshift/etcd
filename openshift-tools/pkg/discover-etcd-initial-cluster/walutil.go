@@ -36,10 +36,10 @@ func readClusterIdFromWAL(lg *zap.Logger, dataDir string) (cid types.ID, err err
 
 	var walSnap walpb.Snapshot
 	if snapshot != nil {
-		walSnap.Index, walSnap.Term = snapshot.Metadata.Index, snapshot.Metadata.Term
+		walSnap.Index, walSnap.Term = new(snapshot.Metadata.GetIndex()), new(snapshot.Metadata.GetTerm())
 	}
 
-	w, err := wal.Open(lg, walDir, walSnap)
+	w, err := wal.Open(lg, walDir, &walSnap)
 	if err != nil {
 		return 0, err
 	}

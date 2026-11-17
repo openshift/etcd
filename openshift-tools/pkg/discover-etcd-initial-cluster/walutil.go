@@ -23,7 +23,7 @@ func readClusterIdFromWAL(lg *zap.Logger, dataDir string) (cid types.ID, err err
 	// Find a snapshot to start/restart a raft node
 	ss := snap.New(lg, snapDir)
 
-	var walSnaps []walpb.Snapshot
+	var walSnaps []*walpb.Snapshot
 	walSnaps, err = wal.ValidSnapshotEntries(lg, walDir)
 	if err != nil {
 		return 0, err
@@ -54,6 +54,6 @@ func readClusterIdFromWAL(lg *zap.Logger, dataDir string) (cid types.ID, err err
 	}
 
 	var metadata pb.Metadata
-	pbutil.MustUnmarshal(&metadata, walMeta)
-	return types.ID(metadata.ClusterID), nil
+	pbutil.MustUnmarshalMessage(&metadata, walMeta)
+	return types.ID(metadata.GetClusterID()), nil
 }

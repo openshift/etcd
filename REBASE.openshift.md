@@ -30,17 +30,23 @@ Clone from a personal fork of etcd via a pushable (ssh) url:
 
 ```
 git clone git@github.com:<user id>/etcd
+cd etcd
+git remote add upstream https://github.com/etcd-io/etcd.git
+git remote add openshift https://github.com/openshift/etcd.git
 ```
+
+Both flows start by fetching both remotes, so that `openshift/<branch>` and the
+upstream tags are current.
 
 ## Two kinds of rebase
 
 openshift/etcd follows upstream etcd releases in two ways, depending on the kind
 of release:
 
-- **Patch release**, for example v3.7.3 to v3.7.4: merge the new tag with
-  `openshift-hack/rebase.sh`. The new tag contains the previous one, so the
-  merge only brings in the upstream commits since the last rebase. See
-  [Patch releases](#patch-releases-updating-with-rebasesh).
+- **Patch release**, for example v3.7.3 to v3.7.4: merge the new tag into the
+  branch. The new tag contains the previous one, so the merge only brings in
+  the upstream commits since the last rebase. See
+  [Patch releases](#patch-releases-merging-the-new-tag).
 - **Minor release**, for example 3.6 to 3.7: start from the new tag and
   cherry-pick our downstream changes (carries) onto it. A minor release covers
   more than a year of upstream development, so merging the new tag would bring
@@ -73,16 +79,20 @@ plus notes on dependencies.
       bump (OCPBUGS-114428) or the `openshift/bbolt` fork. See
       [Dependency versions ahead of upstream](#dependency-versions-ahead-of-upstream)
       and [Carries that wait on a dependency](#carries-that-wait-on-a-dependency).
-  - If the change has an etcd-io/etcd pull request, use `UPSTREAM: <PR#>:`
-    instead. When a carry could go upstream, open that pull request.
+  - If the change is a cherry-pick of an etcd-io/etcd pull request, use
+    `UPSTREAM: <PR#>:` instead. A related upstream change that is not the
+    source of the commit goes in the body. When a carry could go upstream,
+    open that pull request.
   - Kept in a patch release merge. Cherry-picked again in a minor release
     rebase while it is still needed.
 - `UPSTREAM: <PR#>:`, for example `UPSTREAM: 12345:`
   - A cherry-pick of the etcd-io/etcd pull request with that number, merged or
     still open.
   - Keep it, or cherry-pick it again, only while the new upstream tag does not
-    include that pull request. To check, see whether the pull request, or the
-    backport of it to the upstream release branch, is in the tag.
+    include that pull request. To check, run
+    `git log --oneline -E --grep='#<PR#>([^0-9]|$)' <tag>`. A backport to the
+    upstream release branch has its own pull request number; the original pull
+    request's page links to it.
   - If the pull request is closed without merging, keep carrying the change
     with the same prefix until an equivalent change lands upstream. At the
     next minor release, note in the body that the pull request was closed
@@ -91,11 +101,11 @@ plus notes on dependencies.
   - A commit that only makes sense on the branch it was made for: merge
     conflict resolution, `go mod tidy`, generated files, and builder and base
     image updates.
-  - Never cherry-picked again. Each rebase makes its own drop commits.
+  - Not cherry-picked as their own commits. Each rebase makes its own drop
+    commits.
   - Commits that only touch OpenShift files, such as automated image updates
-    and image-only drops, are not carried as their own commits. At a minor
-    release, they are squashed into the `Add OpenShift specific files`
-    commit, so their changes are kept (see
+    and image-only drops, keep their changes: at a minor release, they are
+    squashed into the `Add OpenShift specific files` commit (see
     [Minor releases](#minor-releases-cherry-picking-the-carries)).
 - `UPSTREAM: revert: <original prefix>: <original subject>`
   - Reverts a carry, for example because upstream now includes it, an
@@ -103,7 +113,8 @@ plus notes on dependencies.
     regression. Keep git's `This reverts commit <sha>.` line and add the
     reason.
   - Never cherry-picked again. At the next minor release, leave out both
-    the revert and the carry it reverts.
+    the revert and the carry it reverts. If the revert was itself reverted
+    later, the carry is active again: keep it.
 
 When a Jira ticket exists, put its ID after the prefix, for example
 `UPSTREAM: <carry>: OCPBUGS-12345: Short summary`.
@@ -120,8 +131,8 @@ openshift/etcd. If it were a `<drop>`, the next rebase would quietly lose it.
 These carries conflict in `go.mod` and `go.sum` on almost every patch release
 merge. Keep the higher of the two versions in every module that the carry
 changed, then run `go mod tidy` in those modules. Taking the upstream side by
-default is how the v3.6.16 rebase
-([#427](https://github.com/openshift/etcd/pull/427)) lost the protobuf carry.
+default undid the protobuf carry in a draft of the v3.6.16 rebase
+([#427](https://github.com/openshift/etcd/pull/427)); review caught it.
 When the upstream tag uses the same version or a newer one, take the upstream
 side and the carry is no longer needed.
 
@@ -147,9 +158,13 @@ Drop this carry once upstream etcd uses a bbolt release that includes the fix.
 
 ### Older commits
 
-Commits made before these rules may use other prefixes. Do not rewrite them.
-At the next minor release rebase, relabel each one as it is cherry-picked:
+Commits made before these rules may use other prefixes, or none. Do not
+rewrite them. At the next minor release rebase, relabel each one as it is
+cherry-picked:
 
+- Decide by each commit's diff (`git show --stat <sha>`), not by its subject
+  or prefix. Older commits can be mislabeled: a commit named as a conflict
+  resolution or a merge can hold a carry.
 - `DOWNSTREAM: <carry>:` becomes `UPSTREAM: <carry>:`, or goes into the
   OpenShift files commit (see
   [Minor releases](#minor-releases-cherry-picking-the-carries)).
@@ -170,53 +185,83 @@ At the next minor release rebase, relabel each one as it is cherry-picked:
   [Checking carries after a merge](#checking-carries-after-a-merge) finds
   them.
 
-## Patch releases: updating with `rebase.sh`
+## Patch releases: merging the new tag
 
-`rebase.sh` merges the OpenShift branch with the new upstream tag and creates a
-PR for you. It does not resolve conflicts automatically.
+`openshift-hack/rebase.sh` is outdated and will be removed: it pushes the
+branch without the merge and commits conflict markers. Follow the steps below.
 
-Here are the steps:
-1. Create a new OCPBUGS JIRA ticket with the respective OpenShift version to rebase. Please include the change logs in the ticket description. You can clone a previous rebase we did in [OCPBUGS-947](https://issues.redhat.com/browse/OCPBUGS-947) and adjust.
-2. It's best to start off with a fresh fork of [openshift/etcd](https://github.com/openshift/etcd/). Stay on the `main` branch.
-3. This script requires `jq`, `git`, `podman` and `bash`. `gh` is optional.
-4. In the root dir of that fork run:
-```
-openshift-hack/rebase.sh --etcd-tag=v3.5.4 --openshift-release=openshift-4.12 --jira-id=666
-```
-
-where `etcd-tag` is the [etcd-io/etcd](https://github.com/etcd-io/etcd/) release tag, the `openshift-release`
-is the OpenShift release branch in [openshift/etcd](https://github.com/openshift/etcd/) and the `jira-id` is the
-number of the OCPBUGS ticket created in step (1).
-
-5. In case of conflicts, it will ask you to step into another shell to resolve those. The script will continue by committing the resolution with `UPSTREAM: <drop>:`. Before you continue, check the carries (see [Checking carries after a merge](#checking-carries-after-a-merge)).
-6. At the end, there will be a "rebase-$VERSION" branch pushed to your fork.
-7. If you have `gh` installed and are logged in, it will attempt to create a PR for you by opening a web browser.
+1. Create a new OCPBUGS JIRA ticket for the OpenShift version, with the
+   upstream changelog in the description. You can clone a previous rebase
+   ticket such as [OCPBUGS-947](https://issues.redhat.com/browse/OCPBUGS-947).
+2. Fetch, and create the rebase branch from the branch you rebase (`main`, or
+   a release branch such as `release-5.1`):
+   ```
+   git fetch openshift && git fetch upstream --tags
+   git checkout -b rebase-v3.7.4 openshift/main
+   ```
+3. Merge the new tag:
+   ```
+   git merge v3.7.4
+   ```
+   Resolve the conflicts (for `go.mod` and `go.sum`, see
+   [Dependency versions ahead of upstream](#dependency-versions-ahead-of-upstream)),
+   then commit the merge with git's default message. Before you commit, both of
+   these must print nothing:
+   ```
+   git diff --name-only --diff-filter=U
+   git grep -n -E '^(<<<<<<<|>>>>>>>)( |$)'
+   ```
+4. Run `go mod tidy` in every module the merge changed (on 3.7 and later,
+   `make fix-mod-tidy` does all of them). Use the Go version in `go.mod`; CI
+   builds with the `build_root_image` in `.ci-operator.yaml`. Commit the
+   result as `UPSTREAM: <drop>: go mod tidy`.
+5. Whether or not there were conflicts, [check the carries](#checking-carries-after-a-merge)
+   and [the bbolt version](#when-a-rebase-changes-the-bbolt-version).
+6. Build and test (see [Building and testing](#building-and-testing)), push
+   the branch to your fork, and open a PR against the branch you rebased, for
+   example:
+   ```
+   git push origin rebase-v3.7.4
+   gh pr create -R openshift/etcd --base main --head <user id>:rebase-v3.7.4 \
+     --title "OCPBUGS-<number>: Rebase v3.7.4"
+   ```
+   Link the upstream release notes in the PR description.
 
 ### Checking carries after a merge
 
 To list the carries in the merge result, run this on the rebase branch:
 
 ```
-git log --no-merges --ancestry-path --format='%h %s' <base-tag>..HEAD \
+git log --no-merges --ancestry-path --format='%h %s' <base-tag>..HEAD ^<new-tag> \
   | grep -E '^[0-9a-f]+ UPSTREAM: (<carry>|[0-9]+):'
 ```
 
 where `<base-tag>` is the upstream tag that the last minor release rebase
-started from (for example, `v3.7.3` for the whole 3.7 line). `--ancestry-path`
-leaves out the commits from before that rebase, which are still in the history.
-On a branch that has not had a minor release rebase with this process yet,
-drop `--ancestry-path`, use the upstream tag of the previous patch release as
-`<base-tag>`, and also match `DOWNSTREAM: <carry>:`.
+started from (for example, `v3.7.3` for the whole 3.7 line), and `<new-tag>` is
+the tag you just merged. `--ancestry-path` leaves out the commits from before
+that rebase, which are still in the history, and `^<new-tag>` leaves out the
+upstream commits.
 
 To list the reverts, so that you can strike the carries they revert:
 
 ```
-git log --no-merges --ancestry-path --format='%h %s' <base-tag>..HEAD \
+git log --no-merges --ancestry-path --format='%h %s' <base-tag>..HEAD ^<new-tag> \
   | grep -E '^[0-9a-f]+ (UPSTREAM: revert:|.*Revert ")'
 ```
 
 The second pattern also finds older reverts that kept git's default
 `Revert "..."` subject under another prefix.
+
+On a branch that has not had a minor release rebase with this process yet (the
+3.6 branches), change both commands: drop `--ancestry-path` and `^<new-tag>`,
+use `<new-tag>` as `<base-tag>`, and use this pattern for the carries, which
+also matches the older prefixes:
+
+```
+grep -E '^[0-9a-f]+ (UPSTREAM: (<carry>|[0-9]+)|DOWNSTREAM:? <carry>):'
+```
+
+Also read the commits that have no prefix: some older carries have none.
 
 Go through every carry in the list, not only the ones that had conflicts. Make
 sure that its change is still in the result. A carry can become unnecessary
@@ -231,23 +276,37 @@ lacks the fix, the merge succeeds and the build stays on the old fork. See
 
 ### Removing a carry in a patch release
 
-When the new upstream tag includes a change that we carry, revert the carry in
-the rebase PR. Prefix the revert with `UPSTREAM: revert:` followed by the
-carry's subject (see [Commit message prefixes](#commit-message-prefixes)), and
-name the upstream release or commit that replaces it, for example:
+When the new upstream tag includes a change that we carry, first check whether
+the downstream version is still in the merged tree:
 
 ```
-UPSTREAM: revert: <carry>: OCPBUGS-103516: Replace bbolt with patched fork to remove MADV_RANDOM
-
-This reverts commit <sha>.
-
-bbolt vA.B.C includes the MADV_RANDOM fix (etcd-io/bbolt#939).
+git diff <new-tag> HEAD -- <files the carry changed>
 ```
+
+- If it prints nothing, upstream's version is already in place. Do not revert
+  the carry: a revert would remove upstream's code. For an `UPSTREAM: <PR#>:`
+  carry, nothing else is needed. For an `UPSTREAM: <carry>:`, record the
+  removal with an empty revert, so that the revert list finds it:
+  ```
+  git commit --allow-empty -m "UPSTREAM: revert: <carry>: <subject>" \
+    -m "This reverts commit <sha>." -m "<new-tag> includes this change."
+  ```
+- If it prints the downstream difference, for example the bbolt `replace`,
+  revert the carry in the rebase PR. Prefix the revert with
+  `UPSTREAM: revert:` followed by the carry's subject (see
+  [Commit message prefixes](#commit-message-prefixes)), and name the upstream
+  release or commit that replaces it, for example:
+  ```
+  UPSTREAM: revert: <carry>: OCPBUGS-103516: Replace bbolt with patched fork to remove MADV_RANDOM
+
+  This reverts commit <sha>.
+
+  bbolt vA.B.C includes the MADV_RANDOM fix (etcd-io/bbolt#939).
+  ```
 
 If `git revert` does not apply cleanly, remove the change by hand in a commit
 with the same kind of message. If you already took the upstream version while
-resolving a merge conflict, list the removed carry in the rebase PR description
-instead.
+resolving a merge conflict, record it with an empty revert, as above.
 
 If the upstream version differs from ours, for example with a different flag
 name or behavior, check whether
@@ -263,27 +322,37 @@ A minor release rebase starts a new branch from the upstream tag, connects it to
 the OpenShift branch's history, and cherry-picks the carries that are still
 needed. This follows the openshift/kubernetes process.
 
-The steps below rebase `main`. To rebase a release branch that has already
-branched, such as `openshift-5.1`, use that branch instead of `main` in steps 2,
-4, 5 and 7. If the same minor release was already rebased onto `main`, cherry-pick
-the commits from that rebase PR. They were already adapted to the new tag, so
-they should apply cleanly.
+The steps below rebase `main`. To rebase a release branch, use the branch that
+CI builds (`release-<X.Y>`, for example `release-5.1`) instead of `main` in
+steps 2, 4, 5, 7 and 8. Step 2's list for that branch decides what is kept. If
+`main` was already rebased onto the same tag, use the adapted version of each
+kept commit from that rebase instead of the original, listed by:
+
+```
+git log --no-merges --reverse --ancestry-path --format='%h %s' <tag>..<main rebase PR head>
+```
+
+Never cherry-pick that PR's merge commit or its `<drop>` commits.
 
 1. Create a new OCPBUGS JIRA ticket, as for a patch release.
-2. List the commits to consider:
+2. Fetch, and list the commits to consider:
    ```
-   git log --no-merges --reverse --ancestry-path --format='%h %s' <base-tag>..openshift/main
+   git fetch openshift && git fetch upstream --tags
+   git log --no-merges --reverse --ancestry-path --format='%h %s' \
+     <base-tag>..openshift/main ^<latest-tag>
    ```
    where `<base-tag>` is the upstream tag that the last minor release rebase
-   started from. For the first minor release rebase with this process (3.6 to
-   3.7), drop `--ancestry-path` and use the upstream tag that `main` is on,
-   for example `v3.6.16`. Decide for each commit whether to cherry-pick it,
-   squash it into another commit, or leave it out, using the
-   [prefixes](#commit-message-prefixes). Record the decisions in the rebase PR
-   description.
+   started from, and `<latest-tag>` is the latest upstream tag merged into the
+   branch (`git describe --tags --abbrev=0 openshift/main`). `^<latest-tag>`
+   leaves out the upstream commits that patch release merges brought in. For
+   the first minor release rebase with this process (3.6 to 3.7), drop
+   `--ancestry-path` and `^<latest-tag>`, and use the upstream tag that `main`
+   is on, for example `v3.6.16`. Decide for each commit whether to cherry-pick
+   it, squash it into another commit, or leave it out, using the
+   [prefixes](#commit-message-prefixes) and [Older commits](#older-commits).
+   Record the decisions in the rebase PR description.
 3. Create the rebase branch from the new upstream tag:
    ```
-   git fetch upstream --tags
    git checkout -b rebase-v3.7.3 v3.7.3
    ```
 4. Merge the OpenShift branch with the `ours` merge strategy:
@@ -309,20 +378,20 @@ they should apply cleanly.
      them.
    - Squash the commits that only touch OpenShift files into one commit named
      `UPSTREAM: <carry>: Add OpenShift specific files`, as openshift/kubernetes
-     does. OpenShift files include `openshift-tools/`, `openshift-hack/`,
-     `build.sh`, `OWNERS`, the Dockerfiles, `.ci-operator.yaml`, this
-     document, and the agent docs.
+     does. The OpenShift files are the paths in the check below.
+     - Split any commit that changes both OpenShift files and etcd files
+       first: its OpenShift files go into this commit, and each etcd change
+       goes into the carry it belongs to (see [Older commits](#older-commits)).
      - Cherry-pick the previous rebase's `Add OpenShift specific files`
        commit, if there is one, then every later commit that only touches
        OpenShift files, whatever its prefix. Squash them into one commit, and
        keep the squashed commits' subjects in its body.
-     - First split any commit that changes both OpenShift files and etcd
-       files: its OpenShift files go into this commit, and each etcd change
-       goes into the carry it belongs to (see [Older commits](#older-commits)).
-     - If a file that upstream also has, such as `OWNERS`, conflicts, keep
-       our version.
+     - If a file that upstream also has, such as `OWNERS`, conflicts, keep the
+       version from the commit you are picking:
+       `git checkout <sha> -- OWNERS`.
      - You can keep the picks as separate commits while the PR is in review,
-       and squash them before it merges.
+       and squash them before it merges. Squash only the picks, never the
+       `-s ours` merge. Force-pushing your own PR branch for this is fine.
      - Then check that the OpenShift files match `openshift/main`. This
        prints nothing:
        ```
@@ -336,17 +405,51 @@ they should apply cleanly.
      follow-up commits that fix it.
    - Fix each commit message as you go, so that every commit follows the
      prefixes in this document (see [Older commits](#older-commits)).
-   - If the new etcd release uses a new bbolt version, check whether the
-     `openshift/bbolt` fork needs a new branch (see
-     [When a rebase changes the bbolt version](#when-a-rebase-changes-the-bbolt-version)).
-6. Update the builder and base images, run `go mod tidy`, and regenerate
-   generated files. Commit each as `UPSTREAM: <drop>:`.
-7. Build and test, push the branch to your fork, and open a PR against `main`.
+   - Cherry-pick the bbolt carry, then always repoint its `replace` at the
+     fork branch for the bbolt version that the new tag requires (for v3.7.3,
+     `release-5.1-bbolt-v1.5.0`), using step 2 of
+     [When a rebase changes the bbolt version](#when-a-rebase-changes-the-bbolt-version).
+     The cherry-pick keeps the old fork's `replace` line. Fold the repoint
+     into the carry, and update the branch name in its message.
+   - Check that no carried change was lost. Every file this prints must be
+     explained in the PR description (its carry was left out on purpose, or
+     upstream removed or replaced the file):
+     ```
+     comm -23 <(git diff --name-only <old-base-tag> openshift/main | sort) \
+              <(git diff --name-only <new-tag> HEAD | sort)
+     ```
+     For 3.6 to 3.7, `<old-base-tag>` is `v3.6.16` and `<new-tag>` is
+     `v3.7.3`.
+6. Update the builder and base images (in `.ci-operator.yaml` and the
+   `Dockerfile.*` files), run `go mod tidy` in every module (on 3.7 and later,
+   `make fix-mod-tidy`), and regenerate generated files. Commit each as
+   `UPSTREAM: <drop>:`.
+7. Build and test (see [Building and testing](#building-and-testing)), push the
+   branch to your fork, and open a PR against `main`.
+8. Before the PR merges, fetch `openshift/main` again. If it has new commits,
+   handle each as in step 5, then record the new tip with another
+   `git merge -s ours openshift/main` and rerun the OpenShift files check. To
+   keep this rare, ask the team for a short merge freeze on `main` in the last
+   days before the rebase PR merges.
+9. After the rebase PR merges, every open PR against `main` must be rebased
+   onto the new branch before it merges. A PR still based on the old branch
+   brings in commits that the `--ancestry-path` lists never show. To find
+   them:
+   ```
+   for pr in $(gh pr list -R openshift/etcd --base main --state open --json number --jq '.[].number'); do
+     git fetch -q openshift "pull/$pr/head" &&
+       git tag --merged FETCH_HEAD '<new minor>.*' | grep -q . || echo "#$pr needs a rebase"
+   done
+   ```
+   where `<new minor>` is, for example, `v3.7`. Tell the team in the channel
+   when the rebase PR merges.
 
 ## Building and testing
 
-- Build the code with `make`
-- Test the code with `make test`
+- Build with `./build.sh`, which the image build uses. Check that `bin/` has
+  `etcd`, `etcdctl`, `etcdutl` and `discover-etcd-initial-cluster`; `make`
+  builds only the first three.
+- Test with `make test` and `go test ./openshift-tools/...`.
 
 ## Downstream bbolt fork (openshift/bbolt)
 
@@ -370,9 +473,10 @@ point at the same commits. Keep both names.
   from the tag and cherry-pick the patch onto it.
 - At each new OpenShift release, create that release's branch name even if
   bbolt has not changed. Point it at the same commit as the previous release's
-  branch, for example:
+  branch, for example, in a clone of openshift/bbolt:
   ```
-  git push origin release-5.1-bbolt-v1.5.0:refs/heads/release-5.2-bbolt-v1.5.0
+  git fetch origin
+  git push origin origin/release-5.1-bbolt-v1.5.0:refs/heads/release-5.2-bbolt-v1.5.0
   ```
   Do not cherry-pick the patch again: a new commit would change etcd's pin for
   no reason.
@@ -380,18 +484,21 @@ point at the same commits. Keep both names.
 ### When a rebase changes the bbolt version
 
 After any rebase, compare the bbolt version in `require` with the bbolt tag of
-the fork branch that `replace` points at. The replace silently overrides
-`require`: if upstream etcd moved to a newer bbolt, the merge succeeds but the
-build stays on the old fork. This can happen in a patch release too, for
-example etcd 3.7.5 moving to bbolt v1.5.1.
+the fork branch that `replace` points at. The `replace` pseudo-version ends in
+the fork commit's hash; `git ls-remote https://github.com/openshift/bbolt | grep <hash>`
+names its branch. The replace silently overrides `require`: if upstream etcd
+moved to a newer bbolt, the merge succeeds but the build stays on the old fork.
+This can happen in a patch release too, for example etcd 3.7.5 moving to bbolt
+v1.5.1.
 
 If the versions differ, check whether the new bbolt tag includes the
 `MADV_RANDOM` fix.
 
 **If the new tag does not include the fix:**
 
-1. Cut a fork branch for the new tag (see [Fork branches](#fork-branches)), for
-   example `release-5.1-bbolt-v1.5.1` from `v1.5.1`.
+1. Use the fork branch for the new tag. If there is none, cut one (see
+   [Fork branches](#fork-branches)), for example `release-5.1-bbolt-v1.5.1`
+   from `v1.5.1`.
 2. Point the replace at its commit and run `go mod tidy` in each of the four
    module directories. Use `go mod edit` with the raw commit hash, and
    `go mod tidy` resolves the pseudo-version:
@@ -412,8 +519,11 @@ If the versions differ, check whether the new bbolt tag includes the
 **If the new tag includes the fix:**
 
 The fork is no longer needed. In a patch release rebase, revert the bbolt carry
-(see [Removing a carry in a patch release](#removing-a-carry-in-a-patch-release)).
-In a minor release rebase, leave it out. Then remove this section.
+and any later repoint commits (see
+[Removing a carry in a patch release](#removing-a-carry-in-a-patch-release)).
+In a minor release rebase, leave them out. Then remove this whole "Downstream
+bbolt fork" section, and the bbolt items in `AGENTS.md` and
+`docs/openshift-downstream.md`.
 
 ## Payload testing
 
@@ -421,11 +531,11 @@ After all the above are green and your PR pre-submits are too, you can start wit
 
 You should run those two:
 
-> /payload 4.x nightly informing
+> /payload 5.x nightly informing
 > 
-> /payload 4.x nightly blocking
+> /payload 5.x nightly blocking
 
-Replace 4.x with the respective OpenShift release you're merging against.
+Replace 5.x with the respective OpenShift release you're merging against.
 
 It pays off to inspect some Prometheus metrics (CPU, memory, disk usage) with an upgrade job through PromeCIus. This is to ensure we don't increase resource usage inadvertently. 
 

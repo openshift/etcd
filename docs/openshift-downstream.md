@@ -162,6 +162,6 @@ pointers; expand them in follow-up changes as needed.
   data dir aside during a quorum restore, which the archiving behavior above
   supports.
 
-The complete, current list is always the git history filtered by the
-`UPSTREAM: <carry>` and `UPSTREAM: <PR#>` commit prefixes (and, for commits
-from before the current minor release, `DOWNSTREAM: <carry>`).
+The complete, current list is what the carry list command in
+[Checking carries after a merge](../REBASE.openshift.md#checking-carries-after-a-merge)
+prints.

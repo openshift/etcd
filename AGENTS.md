@@ -97,7 +97,8 @@ deep dive.
 ```bash
 GO_BUILD_FLAGS='-v' ./build.sh   # builds bin/{etcd,etcdctl,etcdutl,discover-etcd-initial-cluster}
 make build          # standard upstream build
-make test           # unit tests
+make test           # unit, integration, release and e2e (slow)
+make test-unit      # unit tests only
 make test-integration
 make test-e2e
 make verify         # linters and generated-file checks

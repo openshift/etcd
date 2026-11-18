@@ -61,7 +61,7 @@ Every non-merge commit in openshift/etcd that is not in upstream etcd starts
 with a prefix. The prefix tells the person doing the next rebase whether to
 keep the commit. openshift/etcd uses the same prefixes as
 [openshift/kubernetes](https://github.com/openshift/kubernetes/blob/master/REBASE.openshift.md),
-plus two etcd rules for dependencies.
+plus notes on dependencies.
 
 - `UPSTREAM: <carry>:`
   - A persistent change that must survive every rebase and has no
@@ -110,17 +110,20 @@ When a Jira ticket exists, put its ID after the prefix, for example
 
 ### Dependency versions ahead of upstream
 
-openshift/kubernetes labels dependency updates `<drop>`, because each rebase
-updates them again. In openshift/etcd, a commit that moves a dependency to a
-newer version than the upstream release uses, for example to pick up a fix
-early, is an `UPSTREAM: <carry>:`. If it were a `<drop>`, the next rebase would
-quietly lose it.
+openshift/kubernetes lists dependency updates under `<drop>`, but that covers
+changes each rebase redoes anyway: vendoring and its own OpenShift libraries.
+A dependency moved to a newer version than the upstream release uses, for
+example for a CVE fix, is an `UPSTREAM: <carry>:` there too (for example
+`UPSTREAM: <carry>: bump otel to v1.44.0 to fix CVE-2026-41178`), and in
+openshift/etcd. If it were a `<drop>`, the next rebase would quietly lose it.
 
 These carries conflict in `go.mod` and `go.sum` on almost every patch release
 merge. Keep the higher of the two versions in every module that the carry
-changed, then run `go mod tidy` in those modules. When the upstream tag uses
-the same version or a newer one, take the upstream side and the carry is no
-longer needed.
+changed, then run `go mod tidy` in those modules. Taking the upstream side by
+default is how the v3.6.16 rebase
+([#427](https://github.com/openshift/etcd/pull/427)) lost the protobuf carry.
+When the upstream tag uses the same version or a newer one, take the upstream
+side and the carry is no longer needed.
 
 ### Carries that wait on a dependency
 

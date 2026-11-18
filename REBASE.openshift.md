@@ -127,10 +127,12 @@ side and the carry is no longer needed.
 
 ### Carries that wait on a dependency
 
-`UPSTREAM: <PR#>:` only works for etcd-io/etcd pull requests. A carry that
-waits on a dependency, like the `openshift/bbolt` fork, uses
-`UPSTREAM: <carry>:`. In the commit message body, link the upstream issue or
-pull request, and say when to drop the carry, for example:
+`UPSTREAM: <PR#>:` refers to etcd-io/etcd pull requests. A carry that waits on
+a dependency, like the `openshift/bbolt` fork, uses `UPSTREAM: <carry>:`.
+openshift/kubernetes labels its dependency forks the same way, but does not
+say when to drop them. In openshift/etcd, link the upstream issue or pull
+request in the commit message body, and say when to drop the carry, for
+example:
 
 ```
 UPSTREAM: <carry>: OCPBUGS-103516: Replace bbolt with patched fork to remove MADV_RANDOM

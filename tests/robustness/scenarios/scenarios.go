@@ -216,8 +216,12 @@ func Regression(t *testing.T) []TestScenario {
 	scenarios = append(scenarios, TestScenario{
 		Name:      "NonBlockingDefragBeforeCopyPanic",
 		Failpoint: failpoint.DefragNonBlockingBeforeCopyPanic,
-		Profile:   traffic.LowTraffic,
-		Traffic:   traffic.EtcdPutDeleteLease,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueVeryLow,
+			Watch:      &traffic.WatchDefault,
+			Compaction: &traffic.CompactionDefault,
+		},
+		Traffic: traffic.EtcdPutDeleteLease,
 		Cluster: *e2e.NewConfig(
 			e2e.WithClusterSize(1),
 			e2e.WithGoFailEnabled(true),
@@ -227,8 +231,12 @@ func Regression(t *testing.T) []TestScenario {
 	scenarios = append(scenarios, TestScenario{
 		Name:      "NonBlockingDefragBeforeReplayPanic",
 		Failpoint: failpoint.DefragBeforeReplayPanic,
-		Profile:   traffic.LowTraffic,
-		Traffic:   traffic.EtcdPutDeleteLease,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueVeryLow,
+			Watch:      &traffic.WatchDefault,
+			Compaction: &traffic.CompactionDefault,
+		},
+		Traffic: traffic.EtcdPutDeleteLease,
 		Cluster: *e2e.NewConfig(
 			e2e.WithClusterSize(1),
 			e2e.WithGoFailEnabled(true),
@@ -238,8 +246,12 @@ func Regression(t *testing.T) []TestScenario {
 	scenarios = append(scenarios, TestScenario{
 		Name:      "NonBlockingDefragBeforeRenamePanic",
 		Failpoint: failpoint.DefragBeforeRenamePanic,
-		Profile:   traffic.LowTraffic,
-		Traffic:   traffic.EtcdPutDeleteLease,
+		Profile: traffic.Profile{
+			KeyValue:   &traffic.KeyValueVeryLow,
+			Watch:      &traffic.WatchDefault,
+			Compaction: &traffic.CompactionDefault,
+		},
+		Traffic: traffic.EtcdPutDeleteLease,
 		Cluster: *e2e.NewConfig(
 			e2e.WithClusterSize(1),
 			e2e.WithGoFailEnabled(true),

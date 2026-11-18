@@ -60,7 +60,7 @@ See [docs/openshift-downstream.md](./docs/openshift-downstream.md) for details.
 ```text
 openshift-tools/        # Downstream helper binaries baked into the etcd image
   discover-etcd-initial-cluster/   # Computes ETCD_INITIAL_CLUSTER at pod start
-openshift-hack/         # Downstream tooling
+openshift-hack/         # Downstream tooling, incl. rebase.sh (known bugs)
 server/etcdserver/      # Core server: server.go, raft.go, apply*.go
 server/storage/         # mvcc/, backend/ (bbolt), wal/
 client/v3/              # Go client
@@ -95,7 +95,7 @@ deep dive.
 ## Build and test
 
 ```bash
-./build.sh          # builds bin/{etcd,etcdctl,etcdutl,discover-etcd-initial-cluster}
+GO_BUILD_FLAGS='-v' ./build.sh   # builds bin/{etcd,etcdctl,etcdutl,discover-etcd-initial-cluster}
 make build          # standard upstream build
 make test           # unit tests
 make test-integration
@@ -110,9 +110,12 @@ runs.
 CI (comment on the PR):
 
 ```text
-/payload 4.x nightly informing
-/payload 4.x nightly blocking
+/payload 5.x nightly informing
+/payload 5.x nightly blocking
 ```
+
+Replace 5.x with the release in the `build_root_image` tag of
+`.ci-operator.yaml`.
 
 See [REBASE.openshift.md](./REBASE.openshift.md) for ClusterBot and performance
 testing.
@@ -144,6 +147,7 @@ testing.
 ## Key files
 
 - `openshift-tools/pkg/discover-etcd-initial-cluster/initial-cluster.go` - bootstrap logic
+- `openshift-hack/rebase.sh` - patch rebase helper (known bugs; see REBASE.openshift.md)
 - `REBASE.openshift.md` - rebase and bbolt-fork procedures
 - `build.sh` - builds all binaries, including the downstream helpers
 - `Dockerfile.rhel` - assembles the etcd image

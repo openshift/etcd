@@ -8,9 +8,11 @@ Most downstream changes are carried patches, tracked by commit-message
 convention (`UPSTREAM: <carry>`, `UPSTREAM: <PR#>`, `UPSTREAM: <drop>`,
 `UPSTREAM: revert:`; older commits also use `DOWNSTREAM:`) and
 maintained across rebases. See [REBASE.openshift.md](../REBASE.openshift.md) for
-the rebase workflow. The authoritative list of downstream changes is the git
-history filtered by those prefixes; this document explains the ones that are the
-hardest to understand from the code alone.
+the rebase workflow. The current list of downstream changes is what the carry
+list command in
+[Checking carries after a merge](../REBASE.openshift.md#checking-carries-after-a-merge)
+prints; this document explains the ones that are the hardest to understand from
+the code alone.
 
 ## Deployment model
 

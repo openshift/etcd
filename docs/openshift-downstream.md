@@ -5,8 +5,8 @@ This document describes how `openshift/etcd` differs from upstream
 document covers the OpenShift-specific pieces layered on top.
 
 Most downstream changes are carried patches, tracked by commit-message
-convention (`UPSTREAM: <carry>`, `UPSTREAM: <PR#>`, `UPSTREAM: <drop>`; older
-commits also use `DOWNSTREAM:`) and
+convention (`UPSTREAM: <carry>`, `UPSTREAM: <PR#>`, `UPSTREAM: <drop>`,
+`UPSTREAM: revert:`; older commits also use `DOWNSTREAM:`) and
 maintained across rebases. See [REBASE.openshift.md](../REBASE.openshift.md) for
 the rebase workflow. The authoritative list of downstream changes is the git
 history filtered by those prefixes; this document explains the ones that are the

@@ -31,11 +31,12 @@ See [docs/openshift-downstream.md](./docs/openshift-downstream.md) for details.
 1. **Follow the commit-prefix convention.** Every downstream non-merge commit
    starts with one of the openshift/kubernetes prefixes: `UPSTREAM: <carry>:`
    (a persistent change, OpenShift-specific or waiting on upstream),
-   `UPSTREAM: <PR#>:` (a cherry-pick of that etcd-io/etcd pull request), or
+   `UPSTREAM: <PR#>:` (a cherry-pick of that etcd-io/etcd pull request),
    `UPSTREAM: <drop>:` (only for the current branch, such as conflict
-   resolution, image updates, or reverting a carry). A dependency bump ahead
-   of upstream is a `<carry>`, not a `<drop>`. Older commits may use
-   `DOWNSTREAM:`; do not rewrite them. See
+   resolution or image updates), or
+   `UPSTREAM: revert: <original prefix>: <original subject>` (a revert of a
+   carry). A dependency bump ahead of upstream is a `<carry>`, not a `<drop>`.
+   Older commits may use `DOWNSTREAM:`; do not rewrite them. See
    [REBASE.openshift.md](./REBASE.openshift.md#commit-message-prefixes).
 2. **Rebase the documented way.** Use `openshift-hack/rebase.sh` for patch
    releases and the cherry-pick process for minor releases, and never force

@@ -104,6 +104,8 @@ var (
 		LeaseCheckpoint:              {Default: false, PreRelease: featuregate.Alpha},
 		LeaseCheckpointPersist:       {Default: false, PreRelease: featuregate.Alpha},
 		SetMemberLocalAddr:           {Default: false, PreRelease: featuregate.Alpha},
+		FastLeaseKeepAlive:           {Default: true, PreRelease: featuregate.Beta},
+		PriorityRequest:              {Default: false, PreRelease: featuregate.Alpha},
 	}
 	// ExperimentalFlagToFeatureMap is the map from the cmd line flags of experimental features
 	// to their corresponding feature gates.

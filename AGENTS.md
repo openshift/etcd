@@ -41,9 +41,9 @@ See [docs/openshift-downstream.md](./docs/openshift-downstream.md) for details.
    [REBASE.openshift.md](./REBASE.openshift.md#commit-message-prefixes).
 2. **Rebase the documented way.** Merge the new tag for patch releases and use
    the cherry-pick process for minor releases; see
-   [REBASE.openshift.md](./REBASE.openshift.md). `openshift-hack/rebase.sh` is
-   outdated; do not use it. Never force push branches in openshift/etcd
-   (force-pushing your own PR branch is fine).
+   [REBASE.openshift.md](./REBASE.openshift.md). `openshift-hack/rebase.sh` has
+   known bugs; follow the documented steps until it is fixed. Never force push
+   branches in openshift/etcd (force-pushing your own PR branch is fine).
 3. **Never edit generated code.** Edit the `.proto` and run `make genproto`;
    never hand-edit `*.pb.go`. Never edit `vendor/`.
 4. **Do not break the API.** Never remove or rename API fields; deprecate instead.

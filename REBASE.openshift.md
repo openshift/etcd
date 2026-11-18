@@ -150,8 +150,10 @@ cherry-picked:
 
 ## Patch releases: merging the new tag
 
-`openshift-hack/rebase.sh` is outdated and will be removed: it pushes the
-branch without the merge and commits conflict markers. Follow the steps below.
+These steps follow openshift/kubernetes's "Updating with `git merge`".
+`openshift-hack/rebase.sh` automates them but has known bugs (it pushes the
+branch without the merge, and builds the wrong builder image name) and will be
+fixed; until then, follow the steps below.
 
 1. Create a new OCPBUGS JIRA ticket for the OpenShift version, with the
    upstream changelog in the description. You can clone a previous rebase
@@ -162,16 +164,21 @@ branch without the merge and commits conflict markers. Follow the steps below.
    git fetch openshift && git fetch upstream --tags
    git checkout -b rebase-v3.7.4 openshift/main
    ```
-3. Merge the new tag:
+3. Merge the new tag. If there are conflicts, commit the merge with the
+   conflict markers still in the files, then resolve them in a separate
+   commit, as openshift/kubernetes does, so that reviewers can see each
+   conflict and its resolution:
    ```
    git merge v3.7.4
+   # only if there were conflicts:
+   git add --all && git merge --continue
+   # resolve the conflicts, then:
+   git add --all && git commit -m "UPSTREAM: <drop>: manually resolve conflicts"
    ```
-   Resolve the conflicts (for `go.mod` and `go.sum`, see
-   [Dependency versions ahead of upstream](#dependency-versions-ahead-of-upstream)),
-   then commit the merge with git's default message. Before you commit, both of
-   these must print nothing:
+   For `go.mod` and `go.sum`, see
+   [Dependency versions ahead of upstream](#dependency-versions-ahead-of-upstream).
+   When you are done, this must print nothing:
    ```
-   git diff --name-only --diff-filter=U
    git grep -n -E '^(<<<<<<<|>>>>>>>)( |$)'
    ```
 4. Run `go mod tidy` in every module the merge changed (on 3.7 and later,

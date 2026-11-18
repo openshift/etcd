@@ -28,8 +28,8 @@ See [docs/openshift-downstream.md](./docs/openshift-downstream.md) for details.
 
 ## Critical rules
 
-1. **Follow the commit-prefix convention.** Every downstream non-merge commit
-   starts with one of the openshift/kubernetes prefixes: `UPSTREAM: <carry>:`
+1. **Follow the commit-prefix convention.** Every downstream non-merge commit,
+   except automated ART image updates, starts with one of the openshift/kubernetes prefixes: `UPSTREAM: <carry>:`
    (a persistent change with no etcd-io/etcd pull request to cherry-pick:
    OpenShift-only, or a dependency ahead of upstream),
    `UPSTREAM: <PR#>:` (a cherry-pick of that etcd-io/etcd pull request),
@@ -75,9 +75,9 @@ others) wired together with `replace` directives in `go.mod`.
 ## Downstream differences from upstream
 
 The distinguishing content of this fork lives in the carried patches. The
-current list is what the carry list command in
-[REBASE.openshift.md](./REBASE.openshift.md#checking-carries-after-a-merge)
-prints. The most significant ones:
+current list is the carry list in
+[REBASE.openshift.md](./REBASE.openshift.md#checking-carries-after-a-merge),
+after striking reverted carries. The most significant ones:
 
 - **`discover-etcd-initial-cluster`** - computes `ETCD_INITIAL_CLUSTER` live at
   pod start by querying the running cluster and inspecting the local data dir.

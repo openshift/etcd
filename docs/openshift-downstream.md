@@ -8,10 +8,10 @@ Most downstream changes are carried patches, tracked by commit-message
 convention (`UPSTREAM: <carry>`, `UPSTREAM: <PR#>`, `UPSTREAM: <drop>`,
 `UPSTREAM: revert:`; older commits also use `DOWNSTREAM:`) and
 maintained across rebases. See [REBASE.openshift.md](../REBASE.openshift.md) for
-the rebase workflow. The current list of downstream changes is what the carry
-list command in
-[Checking carries after a merge](../REBASE.openshift.md#checking-carries-after-a-merge)
-prints; this document explains the ones that are the hardest to understand from
+the rebase workflow. The current list of downstream changes is the carry list
+in
+[Checking carries after a merge](../REBASE.openshift.md#checking-carries-after-a-merge),
+after striking reverted carries; this document explains the ones that are the hardest to understand from
 the code alone.
 
 ## Deployment model
@@ -164,6 +164,6 @@ pointers; expand them in follow-up changes as needed.
   data dir aside during a quorum restore, which the archiving behavior above
   supports.
 
-The complete, current list is what the carry list command in
-[Checking carries after a merge](../REBASE.openshift.md#checking-carries-after-a-merge)
-prints.
+The complete, current list is the carry list in
+[Checking carries after a merge](../REBASE.openshift.md#checking-carries-after-a-merge),
+after striking reverted carries.

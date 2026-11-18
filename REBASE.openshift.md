@@ -4,11 +4,13 @@ openshift/etcd is upstream etcd plus downstream commits (carries). This
 document says how to move it to a new upstream release. If a step is unclear or
 wrong while you rebase, fix this document in the rebase PR.
 
-**Minor release base tag:** none yet. `main` and the `release-5.x` branches
-are still on the 3.6 line, where the commands below use their first-switch
-rules. Each minor release rebase PR sets this line (for example to `v3.7.3`);
-the commands below call it `<base-tag>`. Patch release rebases do not change
-it.
+**Minor release base tag:** none yet. Each branch records its own in its copy
+of this document; read it from the branch you rebase
+(`git show openshift/<branch>:REBASE.openshift.md`). A branch whose copy says
+"none yet", or has no such line (such as `release-5.0`), is still on the 3.6
+line, where the commands below use their first-switch rules. Each minor
+release rebase PR sets this line on its branch (for example to `v3.7.3`); the
+commands below call it `<base-tag>`. Patch release rebases do not change it.
 
 ## Preparing the local clone
 
@@ -21,7 +23,9 @@ git config merge.conflictStyle diff3   # show the base version in conflicts
 ```
 
 Both flows start by fetching both remotes, so that `openshift/<branch>` and the
-upstream tags are current.
+upstream tags are current. Start from a clean tree:
+`git status --short --untracked-files=no` prints nothing. Changes to tracked
+files would go into the rebase commits.
 
 ## Two kinds of rebase
 
@@ -69,9 +73,10 @@ only touch OpenShift files and go into the squash in minor release step 5.
     still open.
   - Keep it, or cherry-pick it again, only while the new tag does not include
     the pull request: `git log --oneline -E --grep='#<PR#>([^0-9]|$)' <tag>`.
-    Check that the match is the merge or backport, not a revert of it. A
-    backport to the upstream release branch has its own pull request number;
-    the original pull request's page links to it.
+    Check that the match is the merge or backport, not a revert of it, and
+    that the tag has no later revert of it. A backport to the upstream release
+    branch has its own pull request number; the original pull request's page
+    links to it.
   - If the pull request is closed without merging, keep carrying the change
     with the same prefix until an equivalent change lands upstream. At the
     next minor release, note in the body that the pull request was closed and
@@ -177,21 +182,22 @@ fixed; until then, follow the steps below.
    commit, as openshift/kubernetes does, so that reviewers can see each
    conflict and its resolution:
    ```
-   git merge v3.7.4
+   git -c rerere.enabled=false merge v3.7.4
    # only if there were conflicts:
    git diff --name-only --diff-filter=U > ../conflicts.txt   # every conflicted path
    git add -u && git commit --no-edit
    # resolve every path in ../conflicts.txt, then:
    git add -u && git commit -m "UPSTREAM: <drop>: manually resolve conflicts"
    ```
-   Use `git add -u`, not `git add --all`: the merge must not pick up local
-   files. Resolve every listed path, including modify/delete conflicts, which
-   have no markers. For `go.mod` and `go.sum`, see
+   `-c rerere.enabled=false` keeps a resolution that git remembers from an
+   earlier merge out of the marker commit. Use `git add -u`, not
+   `git add --all`: the merge must not pick up local files. Resolve every
+   listed path, including modify/delete conflicts, which have no markers. For `go.mod` and `go.sum`, see
    [Dependency versions ahead of upstream](#dependency-versions-ahead-of-upstream).
-   When you are done, this must succeed (it fails if any conflict marker is
-   left, including diff3's `|||||||` line):
+   When you are done, this must succeed (it fails if any conflict marker line
+   is left, including diff3's `|||||||` line and a lone `=======`):
    ```
-   ! git grep -n -E '^(<{7}|[|]{7}|>{7})( |$)'
+   ! git grep -n -E '^(={7}$|(<{7}|[|]{7}|>{7})( |$))'
    ```
 4. Run `go mod tidy` in every module the merge changed (on 3.7 and later,
    `make fix-mod-tidy` does all of them). Use the Go version in `go.mod`; CI
@@ -221,10 +227,10 @@ git log --no-merges --ancestry-path --format='%h %s' <base-tag>..HEAD ^<new-tag>
 ```
 
 - `<base-tag>` is the [minor release base tag](#maintaining-openshiftetcd)
-  at the top of this document (for example, `v3.7.3` for the whole 3.7 line),
-  and `<new-tag>` is the tag you just merged. `--ancestry-path` leaves out the commits from before
-  that rebase, which are still in the history, and `^<new-tag>` leaves out the
-  upstream commits.
+  in this document on the branch you rebase (for example, `v3.7.3` for the
+  whole 3.7 line), and `<new-tag>` is the tag you just merged.
+  `--ancestry-path` leaves out the commits from before that rebase, which are
+  still in the history, and `^<new-tag>` leaves out the upstream commits.
 - The revert pattern also finds older reverts that kept git's default
   `Revert "..."` subject under another prefix. Strike each reverted carry from
   the carry list, unless its revert was itself reverted.
@@ -292,10 +298,12 @@ does not use the downstream version before you remove it.
 This follows the openshift/kubernetes process. The steps below rebase `main`.
 To rebase a release branch, use the branch that CI builds (`release-<X.Y>`, for
 example `release-5.1`) instead of `main` in steps 2 to 9, and put the branch
-in the rebase branch name (`rebase-release-5.1-v3.7.3`). Step 2's list for
-that branch decides what is kept. If `main` was already rebased onto the same
-tag, use the adapted version of each kept commit from that rebase instead of
-the original, listed by:
+in the rebase branch name (`rebase-release-5.1-v3.7.3`). A release branch
+that is still synced from `main` gets the rebase from `main`; rebase it
+separately only after it branches. Step 2's list for that branch decides what
+is kept. If `main` was already rebased onto the same tag, use the adapted
+version of each kept commit from that rebase instead of the original, listed
+by:
 
 ```
 git log --no-merges --reverse --ancestry-path --format='%h %s' <tag>..<main rebase PR head>
@@ -315,7 +323,8 @@ does not have.
      <base-tag>..$target ^<latest-tag>
    ```
    Write the `$target` SHA in the PR description; steps 4, 5 and 8 use it.
-   `<base-tag>` is the [minor release base tag](#maintaining-openshiftetcd),
+   `<base-tag>` is the [minor release base tag](#maintaining-openshiftetcd)
+   in `$target`'s copy of this document (`git show $target:REBASE.openshift.md`),
    and `<latest-tag>` is the latest upstream tag merged into the branch
    (`git describe --tags --abbrev=0 --match 'v[0-9]*' $target`). `^<latest-tag>`
    leaves out the upstream commits that patch release merges brought in. For
@@ -397,33 +406,48 @@ does not have.
               <(git diff --name-only <new-tag> HEAD | sort)
      ```
      `<latest-tag>` is the one from step 2 (for 3.6 to 3.7, `v3.6.16`), and
-     `<new-tag>` is the tag you rebase onto. The check works per file: for a
-     file that several carries change, compare each carry's hunks with
-     `git diff <new-tag> HEAD -- <file>`. For dependency carries, check the
-     version in every module the carry changed.
+     `<new-tag>` is the tag you rebase onto. The check works per file, so it
+     does not see a hunk lost inside a file. For each carry whose pick you
+     resolved by hand, split or adapted, compare its hunks (`git show <sha>`)
+     with `git diff <new-tag> HEAD -- <its files>`. For dependency carries,
+     check the version in every module the carry changed.
+   - Check that every commit on top of the new tag has a prefix that the
+     carry lists can see (run it again after squashing); this prints nothing:
+     ```
+     git log --no-merges --ancestry-path --format='%h %s' <new-tag>..HEAD \
+       | grep -v -E '^[0-9a-f]+ UPSTREAM: (revert: )?(<carry>|<drop>|[0-9]+):'
+     ```
 6. Update the builder and base images (in `.ci-operator.yaml` and the
-   `Dockerfile.*` files), run `go mod tidy` in every module (on 3.7 and later,
-   `make fix-mod-tidy`), and regenerate the protobuf files with
-   `./scripts/genproto.sh` (check them with `make verify-genproto`). Commit
-   each as `UPSTREAM: <drop>:`.
+   `Dockerfile.*` files) if the new tag needs it, for example a newer Go than
+   the `build_root_image` has. Run `go mod tidy` in every module (on 3.7 and
+   later, `make fix-mod-tidy`), and regenerate the protobuf files with
+   `./scripts/genproto.sh` (check them with `make verify-genproto` in a
+   regular clone: in a `git worktree` it commits to your branch). Commit each
+   as `UPSTREAM: <drop>:`.
 7. Set the [minor release base tag](#maintaining-openshiftetcd) at the top of
-   this document to the new tag, in its own commit, for example
+   this document, on the branch you rebase, to the new tag, in its own
+   commit, for example
    `UPSTREAM: <carry>: Set the minor release base tag to v3.7.3`. Build and
    test (see [Building and testing](#building-and-testing)), push the branch
    to your fork, and open a PR against `main`.
-8. Before the PR merges, fetch and list what is new on `main`:
+8. Before the PR merges, check whether `main` has moved since `$target`:
    ```
    git fetch openshift
-   git log --no-merges --reverse --format='%h %s' $target..openshift/main \
-     ^$(git describe --tags --abbrev=0 --match 'v[0-9]*' openshift/main)
+   next=$(git rev-parse openshift/main)
+   git log --no-merges --reverse --format='%h %s' $target..$next \
+     ^$(git describe --tags --abbrev=0 --match 'v[0-9]*' $next)
    ```
-   If it prints anything, handle each commit as in step 5, then run
-   `git merge -s ours openshift/main` and set `target` to the new tip. Never
-   sync with a plain `git merge openshift/main`: it brings the old branch's
-   content into the new tree. Rerun the OpenShift files check against your
-   squash commit instead of `HEAD`, because step 6 changes some of those files
-   on purpose. To keep this rare, ask the approvers in `OWNERS` for a short
-   merge freeze on `main` in the last days before the rebase PR merges.
+   If `$next` differs from `$target`, handle each listed commit as in step 5;
+   for a listed revert of a carry you already picked, remove that pick. Then
+   run `git merge -s ours $next` and set `target=$next`, even if nothing was
+   listed (for example, when `main` only merged a patch release): otherwise
+   merging the PR brings `main`'s new commits into the new tree. Never sync
+   with a plain `git merge openshift/main`: it brings the old branch's content
+   into the new tree. Rerun the OpenShift files check against your squash
+   commit (or your last OpenShift files pick, if you have not squashed yet)
+   instead of `HEAD`, because step 6 changes some of those files on purpose.
+   To keep this rare, ask the approvers in `OWNERS` for a short merge freeze
+   on `main` in the last days before the rebase PR merges.
 9. After the rebase PR merges, check that it kept the history, then find the
    open PRs that need a rebase. A PR with commits made on the old branch
    brings in commits that the `--ancestry-path` lists never show, even if
@@ -434,13 +458,15 @@ does not have.
    for pr in $(gh pr list -R openshift/etcd --base main --state open --limit 500 \
                  --json number --jq '.[].number'); do
      git fetch -q openshift "pull/$pr/head" || { echo "#$pr: fetch failed"; continue; }
-     for c in $(git rev-list --no-merges openshift/main..FETCH_HEAD); do
+     for c in $(git rev-list --no-merges openshift/main..FETCH_HEAD \
+                  ^$(git describe --tags --abbrev=0 --match 'v[0-9]*' FETCH_HEAD)); do
        git merge-base --is-ancestor <new-tag> "$c" || { echo "#$pr needs a rebase"; break; }
      done
    done
    ```
-   Each listed PR must be rebased onto the new `main` (not have `main` merged
-   into it) before it merges. Tell the approvers in `OWNERS` when the rebase
+   If it prints `history lost`, stop and tell the approvers in `OWNERS`: the
+   rebase PR did not keep `main`'s history. Each listed PR must be rebased
+   onto the new `main` (not have `main` merged into it) before it merges. Tell the approvers in `OWNERS` when the rebase
    PR merges, so authors of open PRs know to rebase.
 
 ## Building and testing
@@ -502,13 +528,14 @@ differ, check whether the new bbolt tag includes the `MADV_RANDOM` fix.
    `go mod tidy` resolves the pseudo-version:
    ```bash
    for dir in . server etcdutl tests; do
-     (cd $dir && go mod edit -replace go.etcd.io/bbolt=github.com/openshift/bbolt@<commit-hash> && go mod tidy) || exit 1
+     (cd $dir && go mod edit -replace go.etcd.io/bbolt=github.com/openshift/bbolt@<commit-hash> && go mod tidy) \
+       || { echo "failed in $dir"; break; }
    done
    ```
-   Then check that all four modules point at the same commit; this prints one
-   line:
+   Then check that all four modules point at the commit you chose; this
+   prints four lines, each ending in the first 12 characters of its hash:
    ```
-   grep -h 'go.etcd.io/bbolt =>' go.mod server/go.mod etcdutl/go.mod tests/go.mod | sort -u
+   grep -H 'go.etcd.io/bbolt =>' go.mod server/go.mod etcdutl/go.mod tests/go.mod
    ```
 3. Commit it:
    - In a minor release rebase, this is part of cherry-picking the bbolt carry:

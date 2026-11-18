@@ -1,38 +1,18 @@
 # Maintaining openshift/etcd
 
-OpenShift is based on upstream etcd. With every release of etcd that is
-intended to be shipped as OCP, it is necessary to incorporate the upstream changes
-while ensuring that our downstream customizations are maintained.
+openshift/etcd is upstream etcd plus downstream commits (carries). This
+document says how to move it to a new upstream release. If a step is unclear or
+wrong while you rebase, fix this document in the rebase PR.
 
-## Maintaining this document
-
-An openshift/etcd rebase is a complex process involving many manual and
-potentially error-prone steps. If, while performing a rebase, you find areas where
-the documented procedure is unclear or missing detail, please update this document
-and include the change in the rebase PR. This will ensure that the instructions are
-as comprehensive and accurate as possible for the person performing the next
-rebase.
-
-## Getting started
-
-Before incorporating upstream changes you may want to:
-
-- Read this document
-- Find the best tool for resolving merge conflicts
-- Use diff3 conflict resolution strategy
-  (https://blog.nilbus.com/take-the-pain-out-of-git-conflict-resolution-use-diff3/)
-- Teach Git to remember how you’ve resolved a conflict so that the next time it can
-  resolve it automatically (https://git-scm.com/book/en/v2/Git-Tools-Rerere)
-
-## Preparing the local repo clone
-
-Clone from a personal fork of etcd via a pushable (ssh) url:
+## Preparing the local clone
 
 ```
 git clone git@github.com:<user id>/etcd
 cd etcd
 git remote add upstream https://github.com/etcd-io/etcd.git
 git remote add openshift https://github.com/openshift/etcd.git
+git config merge.conflictStyle diff3   # show the base version in conflicts
+git config rerere.enabled true         # reuse earlier conflict resolutions
 ```
 
 Both flows start by fetching both remotes, so that `openshift/<branch>` and the
@@ -40,45 +20,37 @@ upstream tags are current.
 
 ## Two kinds of rebase
 
-openshift/etcd follows upstream etcd releases in two ways, depending on the kind
-of release:
-
 - **Patch release**, for example v3.7.3 to v3.7.4: merge the new tag into the
   branch. The new tag contains the previous one, so the merge only brings in
   the upstream commits since the last rebase. See
   [Patch releases](#patch-releases-merging-the-new-tag).
 - **Minor release**, for example 3.6 to 3.7: start from the new tag and
-  cherry-pick our downstream changes (carries) onto it. A minor release covers
-  more than a year of upstream development, so merging the new tag would bring
-  in thousands of commits, many of them already backported to the previous
-  release as different commits, and they would conflict. See
+  cherry-pick our carries onto it. A minor release covers more than a year of
+  upstream development, so merging the new tag would bring in thousands of
+  commits, many of them already backported to the previous release as
+  different commits, and they would conflict. See
   [Minor releases](#minor-releases-cherry-picking-the-carries).
 
-Both keep the history connected, and neither needs a force push. The move from
-etcd 3.5 to 3.6 ([#343](https://github.com/openshift/etcd/pull/343)) rewrote
-the branch once, after about three years of drift. Do not do that again.
-
-In both, the [commit message prefixes](#commit-message-prefixes) decide which
-downstream commits are kept.
+Neither needs a force push. Do not rewrite the branch again, as the 3.5 to 3.6
+move ([#343](https://github.com/openshift/etcd/pull/343)) did. In both, the
+[commit message prefixes](#commit-message-prefixes) decide which downstream
+commits are kept.
 
 ## Commit message prefixes
 
-Every non-merge commit in openshift/etcd that is not in upstream etcd starts
-with a prefix. The prefix tells the person doing the next rebase whether to
-keep the commit. openshift/etcd uses the same prefixes as
-[openshift/kubernetes](https://github.com/openshift/kubernetes/blob/master/REBASE.openshift.md),
-plus notes on dependencies.
+Every downstream non-merge commit starts with one of these prefixes, the same
+as in
+[openshift/kubernetes](https://github.com/openshift/kubernetes/blob/master/REBASE.openshift.md).
+The prefix tells the next rebase whether to keep the commit.
 
 - `UPSTREAM: <carry>:`
-  - A persistent change that must survive every rebase and has no
-    etcd-io/etcd pull request to cherry-pick. This covers:
+  - A persistent change that has no etcd-io/etcd pull request to cherry-pick:
     - changes that only make sense in OpenShift, for example
       `discover-etcd-initial-cluster`;
     - dependencies we need ahead of the upstream release, either a newer
       version or a patched fork, for example the `google.golang.org/protobuf`
-      bump (OCPBUGS-114428) or the `openshift/bbolt` fork. See
-      [Dependency versions ahead of upstream](#dependency-versions-ahead-of-upstream)
-      and [Carries that wait on a dependency](#carries-that-wait-on-a-dependency).
+      bump (OCPBUGS-114428) or the `openshift/bbolt` fork (see the two
+      sections below).
   - If the change is a cherry-pick of an etcd-io/etcd pull request, use
     `UPSTREAM: <PR#>:` instead. A related upstream change that is not the
     source of the commit goes in the body. When a carry could go upstream,
@@ -88,33 +60,30 @@ plus notes on dependencies.
 - `UPSTREAM: <PR#>:`, for example `UPSTREAM: 12345:`
   - A cherry-pick of the etcd-io/etcd pull request with that number, merged or
     still open.
-  - Keep it, or cherry-pick it again, only while the new upstream tag does not
-    include that pull request. To check, run
-    `git log --oneline -E --grep='#<PR#>([^0-9]|$)' <tag>`. A backport to the
-    upstream release branch has its own pull request number; the original pull
-    request's page links to it.
+  - Keep it, or cherry-pick it again, only while the new tag does not include
+    the pull request: `git log --oneline -E --grep='#<PR#>([^0-9]|$)' <tag>`.
+    A backport to the upstream release branch has its own pull request
+    number; the original pull request's page links to it.
   - If the pull request is closed without merging, keep carrying the change
     with the same prefix until an equivalent change lands upstream. At the
-    next minor release, note in the body that the pull request was closed
-    and say when to drop the carry.
+    next minor release, note in the body that the pull request was closed and
+    say when to drop the carry.
 - `UPSTREAM: <drop>:`
   - A commit that only makes sense on the branch it was made for: merge
     conflict resolution, `go mod tidy`, generated files, and builder and base
-    image updates.
-  - Not cherry-picked as their own commits. Each rebase makes its own drop
-    commits.
-  - Commits that only touch OpenShift files, such as automated image updates
-    and image-only drops, keep their changes: at a minor release, they are
-    squashed into the `Add OpenShift specific files` commit (see
-    [Minor releases](#minor-releases-cherry-picking-the-carries)).
+    image updates. Not cherry-picked as its own commit; each rebase makes its
+    own drops.
+  - Drops that only touch OpenShift files, such as automated image updates,
+    keep their changes through the `Add OpenShift specific files` squash
+    (minor release step 5).
 - `UPSTREAM: revert: <original prefix>: <original subject>`
   - Reverts a carry, for example because upstream now includes it, an
     upstream change we want bundles it with other changes, or it causes a
     regression. Keep git's `This reverts commit <sha>.` line and add the
     reason.
-  - Never cherry-picked again. At the next minor release, leave out both
-    the revert and the carry it reverts. If the revert was itself reverted
-    later, the carry is active again: keep it.
+  - At the next minor release, leave out both the revert and the carry it
+    reverts. If the revert was itself reverted later, the carry is active
+    again: keep it.
 
 When a Jira ticket exists, put its ID after the prefix, for example
 `UPSTREAM: <carry>: OCPBUGS-12345: Short summary`.
@@ -132,18 +101,17 @@ These carries conflict in `go.mod` and `go.sum` on almost every patch release
 merge. Keep the higher of the two versions in every module that the carry
 changed, then run `go mod tidy` in those modules. Taking the upstream side by
 default undid the protobuf carry in a draft of the v3.6.16 rebase
-([#427](https://github.com/openshift/etcd/pull/427)); review caught it.
-When the upstream tag uses the same version or a newer one, take the upstream
-side and the carry is no longer needed.
+([#427](https://github.com/openshift/etcd/pull/427)); review caught it. When
+the upstream tag uses the same version or a newer one, take the upstream side;
+the carry is no longer needed.
 
 ### Carries that wait on a dependency
 
-`UPSTREAM: <PR#>:` refers to etcd-io/etcd pull requests. A carry that waits on
-a dependency, like the `openshift/bbolt` fork, uses `UPSTREAM: <carry>:`.
-openshift/kubernetes labels its dependency forks the same way, but does not
-say when to drop them. In openshift/etcd, link the upstream issue or pull
-request in the commit message body, and say when to drop the carry, for
-example:
+A carry that waits on a dependency, like the `openshift/bbolt` fork, uses
+`UPSTREAM: <carry>:`. openshift/kubernetes labels its dependency forks the
+same way, but does not say when to drop them. In openshift/etcd, link the
+upstream issue or pull request in the commit message body, and say when to
+drop the carry, for example:
 
 ```
 UPSTREAM: <carry>: OCPBUGS-103516: Replace bbolt with patched fork to remove MADV_RANDOM
@@ -165,25 +133,20 @@ cherry-picked:
 - Decide by each commit's diff (`git show --stat <sha>`), not by its subject
   or prefix. Older commits can be mislabeled: a commit named as a conflict
   resolution or a merge can hold a carry.
-- `DOWNSTREAM: <carry>:` becomes `UPSTREAM: <carry>:`, or goes into the
-  OpenShift files commit (see
-  [Minor releases](#minor-releases-cherry-picking-the-carries)).
-- `UPSTREAM: <carry>:` for a cherry-pick of an etcd-io/etcd pull request
+- `DOWNSTREAM: <carry>:` (also written `DOWNSTREAM <carry>:`) becomes
+  `UPSTREAM: <carry>:`, or `UPSTREAM: <PR#>:` if it is a cherry-pick of an
+  etcd-io/etcd pull request. `UPSTREAM: <carry>:` for such a cherry-pick also
   becomes `UPSTREAM: <PR#>:`.
-- Commits that only touch OpenShift files, whatever their prefix (including
-  `DOWNSTREAM: <drop>:` and automated image updates), are squashed into the
-  `Add OpenShift specific files` commit (see step 5 of
-  [Minor releases](#minor-releases-cherry-picking-the-carries)).
+- Commits that only touch OpenShift files, whatever their prefix, go into the
+  `Add OpenShift specific files` squash (minor release step 5).
 - Drops from merging upstream, such as conflict resolution and `go mod tidy`,
   are left out, whatever their prefix. They only fit the old base; the new
-  rebase resolves its own conflicts and runs its own `go mod tidy`.
+  rebase makes its own.
 - A drop that also fixes a carry, for example by adding an import the carry
   needs, is split: add each fix to the carry it fixes when you cherry-pick
   that carry, and leave the rest of the drop out.
 - A reverted carry is left out together with its revert, whatever prefix the
-  revert has. New reverts use `UPSTREAM: revert:`; the revert list in
-  [Checking carries after a merge](#checking-carries-after-a-merge) finds
-  them.
+  revert has (see the `UPSTREAM: revert:` rule above).
 
 ## Patch releases: merging the new tag
 
@@ -229,49 +192,37 @@ branch without the merge and commits conflict markers. Follow the steps below.
 
 ### Checking carries after a merge
 
-To list the carries in the merge result, run this on the rebase branch:
+On the rebase branch, list the carries and the reverts:
 
 ```
 git log --no-merges --ancestry-path --format='%h %s' <base-tag>..HEAD ^<new-tag> \
   | grep -E '^[0-9a-f]+ UPSTREAM: (<carry>|[0-9]+):'
-```
-
-where `<base-tag>` is the upstream tag that the last minor release rebase
-started from (for example, `v3.7.3` for the whole 3.7 line), and `<new-tag>` is
-the tag you just merged. `--ancestry-path` leaves out the commits from before
-that rebase, which are still in the history, and `^<new-tag>` leaves out the
-upstream commits.
-
-To list the reverts, so that you can strike the carries they revert:
-
-```
 git log --no-merges --ancestry-path --format='%h %s' <base-tag>..HEAD ^<new-tag> \
   | grep -E '^[0-9a-f]+ (UPSTREAM: revert:|.*Revert ")'
 ```
 
-The second pattern also finds older reverts that kept git's default
-`Revert "..."` subject under another prefix.
+- `<base-tag>` is the upstream tag that the last minor release rebase started
+  from (for example, `v3.7.3` for the whole 3.7 line), and `<new-tag>` is the
+  tag you just merged. `--ancestry-path` leaves out the commits from before
+  that rebase, which are still in the history, and `^<new-tag>` leaves out the
+  upstream commits.
+- The revert pattern also finds older reverts that kept git's default
+  `Revert "..."` subject under another prefix. Strike each reverted carry from
+  the carry list.
+- On a branch that has not had a minor release rebase with this process yet
+  (the 3.6 branches), drop `--ancestry-path` and `^<new-tag>` from both
+  commands, use `<new-tag>` as `<base-tag>`, and use this carry pattern, which
+  also matches the older prefixes:
+  ```
+  grep -E '^[0-9a-f]+ (UPSTREAM: (<carry>|[0-9]+)|DOWNSTREAM:? <carry>):'
+  ```
+  Also read the commits that have no prefix: some older carries have none.
 
-On a branch that has not had a minor release rebase with this process yet (the
-3.6 branches), change both commands: drop `--ancestry-path` and `^<new-tag>`,
-use `<new-tag>` as `<base-tag>`, and use this pattern for the carries, which
-also matches the older prefixes:
-
-```
-grep -E '^[0-9a-f]+ (UPSTREAM: (<carry>|[0-9]+)|DOWNSTREAM:? <carry>):'
-```
-
-Also read the commits that have no prefix: some older carries have none.
-
-Go through every carry in the list, not only the ones that had conflicts. Make
-sure that its change is still in the result. A carry can become unnecessary
-even when the merge has no conflict. For example, if upstream etcd moves to a
-bbolt release that includes the `MADV_RANDOM` fix, the `require` line in
-`go.mod` changes but the `replace` line does not. The merge succeeds, and the
-build keeps using the `openshift/bbolt` fork.
-
-The opposite also happens: if upstream etcd moves to a newer bbolt that still
-lacks the fix, the merge succeeds and the build stays on the old fork. See
+Go through every carry in the list, not only the ones that had conflicts, and
+make sure that its change is still in the result. A carry can become
+unnecessary, or stale, with no conflict at all. For example, upstream etcd can
+move to a new bbolt release, with or without the `MADV_RANDOM` fix, while our
+`replace` line stays on the old fork. See
 [When a rebase changes the bbolt version](#when-a-rebase-changes-the-bbolt-version).
 
 ### Removing a carry in a patch release
@@ -292,10 +243,8 @@ git diff <new-tag> HEAD -- <files the carry changed>
     -m "This reverts commit <sha>." -m "<new-tag> includes this change."
   ```
 - If it prints the downstream difference, for example the bbolt `replace`,
-  revert the carry in the rebase PR. Prefix the revert with
-  `UPSTREAM: revert:` followed by the carry's subject (see
-  [Commit message prefixes](#commit-message-prefixes)), and name the upstream
-  release or commit that replaces it, for example:
+  revert the carry in the rebase PR with the `UPSTREAM: revert:` prefix, and
+  name the upstream release or commit that replaces it, for example:
   ```
   UPSTREAM: revert: <carry>: OCPBUGS-103516: Replace bbolt with patched fork to remove MADV_RANDOM
 
@@ -303,30 +252,24 @@ git diff <new-tag> HEAD -- <files the carry changed>
 
   bbolt vA.B.C includes the MADV_RANDOM fix (etcd-io/bbolt#939).
   ```
-
-If `git revert` does not apply cleanly, remove the change by hand in a commit
-with the same kind of message. If you already took the upstream version while
-resolving a merge conflict, record it with an empty revert, as above.
+  If `git revert` does not apply cleanly, remove the change by hand in a
+  commit with the same kind of message.
+- If you already took the upstream version while resolving a merge conflict,
+  record it with an empty revert, as above.
 
 If the upstream version differs from ours, for example with a different flag
-name or behavior, check whether
+name or behavior, check that
 [cluster-etcd-operator](https://github.com/openshift/cluster-etcd-operator)
-uses the downstream version before you remove it.
-
-At the next minor release rebase, neither the carry nor its revert is
-cherry-picked.
+does not use the downstream version before you remove it.
 
 ## Minor releases: cherry-picking the carries
 
-A minor release rebase starts a new branch from the upstream tag, connects it to
-the OpenShift branch's history, and cherry-picks the carries that are still
-needed. This follows the openshift/kubernetes process.
-
-The steps below rebase `main`. To rebase a release branch, use the branch that
-CI builds (`release-<X.Y>`, for example `release-5.1`) instead of `main` in
-steps 2, 4, 5, 7 and 8. Step 2's list for that branch decides what is kept. If
-`main` was already rebased onto the same tag, use the adapted version of each
-kept commit from that rebase instead of the original, listed by:
+This follows the openshift/kubernetes process. The steps below rebase `main`.
+To rebase a release branch, use the branch that CI builds (`release-<X.Y>`, for
+example `release-5.1`) instead of `main` in steps 2, 4, 5, 7 and 8. Step 2's
+list for that branch decides what is kept. If `main` was already rebased onto
+the same tag, use the adapted version of each kept commit from that rebase
+instead of the original, listed by:
 
 ```
 git log --no-merges --reverse --ancestry-path --format='%h %s' <tag>..<main rebase PR head>
@@ -363,25 +306,23 @@ Never cherry-pick that PR's merge commit or its `<drop>` commits.
    content, so the branch still matches the upstream tag. It keeps the history
    connected and lets the rebase PR merge normally, without a force push. Do
    not confuse it with the `-X ours` option, which resolves conflicts.
-5. Cherry-pick the commits:
+5. Cherry-pick the commits, applying the [prefixes](#commit-message-prefixes)
+   and [Older commits](#older-commits) to each one:
    - Cherry-pick `UPSTREAM: <carry>:` commits that are still needed. Leave
      out a carry that waited on upstream or a dependency once the new tag
      includes the change.
    - Cherry-pick `UPSTREAM: <PR#>:` commits only if the new tag does not
-     include that pull request. If the pull request was closed without
-     merging, keep it and add the note described in
-     [Commit message prefixes](#commit-message-prefixes).
-   - Leave out `UPSTREAM: <drop>:` commits. Also leave out any carry that a
-     later commit reverted, together with the revert, whatever prefix the
-     revert has. New reverts use `UPSTREAM: revert:`; the revert list in
+     include that pull request.
+   - Leave out `UPSTREAM: <drop>:` commits, and each reverted carry together
+     with its revert. The revert list in
      [Checking carries after a merge](#checking-carries-after-a-merge) finds
-     them.
+     the reverts.
    - Squash the commits that only touch OpenShift files into one commit named
      `UPSTREAM: <carry>: Add OpenShift specific files`, as openshift/kubernetes
      does. The OpenShift files are the paths in the check below.
      - Split any commit that changes both OpenShift files and etcd files
        first: its OpenShift files go into this commit, and each etcd change
-       goes into the carry it belongs to (see [Older commits](#older-commits)).
+       goes into the carry it belongs to.
      - Cherry-pick the previous rebase's `Add OpenShift specific files`
        commit, if there is one, then every later commit that only touches
        OpenShift files, whatever its prefix. Squash them into one commit, and
@@ -404,7 +345,7 @@ Never cherry-pick that PR's merge commit or its `<drop>` commits.
    - Squash carries that only make sense together, such as a change and the
      follow-up commits that fix it.
    - Fix each commit message as you go, so that every commit follows the
-     prefixes in this document (see [Older commits](#older-commits)).
+     prefixes in this document.
    - Cherry-pick the bbolt carry, then always repoint its `replace` at the
      fork branch for the bbolt version that the new tag requires (for v3.7.3,
      `release-5.1-bbolt-v1.5.0`), using step 2 of
@@ -453,10 +394,10 @@ Never cherry-pick that PR's merge commit or its `<drop>` commits.
 
 ## Downstream bbolt fork (openshift/bbolt)
 
-openshift/etcd carries a `go.mod` replace directive that points
-`go.etcd.io/bbolt` at a patched fork, `openshift/bbolt`. The fork removes the
-`madvise(MADV_RANDOM)` call to fix a page cache regression on RHEL 10 kernels
-(OCPBUGS-103516, https://github.com/etcd-io/bbolt/issues/939).
+The `go.mod` `replace` for `go.etcd.io/bbolt` points at `openshift/bbolt`, a
+fork that removes the `madvise(MADV_RANDOM)` call to fix a page cache
+regression on RHEL 10 kernels (OCPBUGS-103516,
+https://github.com/etcd-io/bbolt/issues/939).
 
 ### Fork branches
 
@@ -486,13 +427,10 @@ point at the same commits. Keep both names.
 After any rebase, compare the bbolt version in `require` with the bbolt tag of
 the fork branch that `replace` points at. The `replace` pseudo-version ends in
 the fork commit's hash; `git ls-remote https://github.com/openshift/bbolt | grep <hash>`
-names its branch. The replace silently overrides `require`: if upstream etcd
-moved to a newer bbolt, the merge succeeds but the build stays on the old fork.
-This can happen in a patch release too, for example etcd 3.7.5 moving to bbolt
-v1.5.1.
-
-If the versions differ, check whether the new bbolt tag includes the
-`MADV_RANDOM` fix.
+names its branch. The replace silently overrides `require`, so the merge
+succeeds but the build stays on the old fork. This can happen in a patch
+release too, for example etcd 3.7.5 moving to bbolt v1.5.1. If the versions
+differ, check whether the new bbolt tag includes the `MADV_RANDOM` fix.
 
 **If the new tag does not include the fix:**
 
@@ -525,30 +463,24 @@ In a minor release rebase, leave them out. Then remove this whole "Downstream
 bbolt fork" section, and the bbolt items in `AGENTS.md` and
 `docs/openshift-downstream.md`.
 
-## Payload testing
+## Payload and cluster testing
 
-After all the above are green and your PR pre-submits are too, you can start with payload testing. This is to ensure the nightly jobs won't break on etcd after the merge, they also test all of OpenShift (including upgrades) well enough. 
+When CI and the PR presubmits are green, run the nightly payload jobs for the
+OpenShift release you merge into (replace 5.x). They test all of OpenShift,
+including upgrades:
 
-You should run those two:
+```
+/payload 5.x nightly informing
+/payload 5.x nightly blocking
+```
 
-> /payload 5.x nightly informing
-> 
-> /payload 5.x nightly blocking
+Check CPU, memory and disk usage for an upgrade job in PromeCIus, so the
+rebase does not increase resource usage.
 
-Replace 5.x with the respective OpenShift release you're merging against.
+To debug on a specific platform (bare metal, vSphere) or variant (SNO), launch
+a cluster with your PR from ClusterBot: `launch openshift/etcd#<PR>`.
 
-It pays off to inspect some Prometheus metrics (CPU, memory, disk usage) with an upgrade job through PromeCIus. This is to ensure we don't increase resource usage inadvertently. 
-
-## Testing with ClusterBot
-
-Sometimes it's easier to debug an issue using cluster bot. Here you can simply run the given OpenShift release using your rebase PR:
-
-> launch openshift/etcd#155
-
-This is particularly helpful when you want to test specific providers, for example Bare Metal or VSphere, or just other variants like SNO.
-
-## Performance Testing
-
-We currently do not do performance testing after an etcd rebase in OpenShift, however the upstream community and [SIG Scalability in k/k does](https://github.com/etcd-io/etcd/issues/14138#issuecomment-1247665949). 
-
-The OpenShift scalability team also regularly runs performance tests with upcoming 4.y.0 releases.
+OpenShift does not run etcd performance tests after a rebase. The upstream
+community and
+[SIG Scalability in Kubernetes](https://github.com/etcd-io/etcd/issues/14138#issuecomment-1247665949)
+do, and the OpenShift scalability team tests upcoming y-stream releases.

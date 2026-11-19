@@ -2,15 +2,16 @@ package discover_etcd_initial_cluster
 
 import (
 	"errors"
-	"go.etcd.io/etcd/server/v3/datadir"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
 	"path/filepath"
+
+	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
+	"go.etcd.io/etcd/server/v3/storage/datadir"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/client/pkg/v3/types"
 	"go.etcd.io/etcd/pkg/v3/pbutil"
-	"go.etcd.io/etcd/server/v3/wal"
-	"go.etcd.io/etcd/server/v3/wal/walpb"
+	"go.etcd.io/etcd/server/v3/storage/wal"
+	"go.etcd.io/etcd/server/v3/storage/wal/walpb"
 
 	"go.uber.org/zap"
 )

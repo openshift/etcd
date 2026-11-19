@@ -1,0 +1,13 @@
+approvers:
+- hasbro17
+- dusk125
+- tjungblu
+- control-plane-approvers
+reviewers:
+- dusk125
+- hasbro17
+- tjungblu
+- natamm4
+- bhperry
+- jubittajohn
+component: "Etcd"

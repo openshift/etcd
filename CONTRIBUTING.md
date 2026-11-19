@@ -55,7 +55,7 @@ For more, because etcd uses Kubernetes' prow infrastructure to run CI jobs, the 
 | periodics e2e-amd64  | [![sig-etcd-periodics/ci-etcd-e2e-amd64](https://testgrid.k8s.io/q/summary/sig-etcd-periodics/ci-etcd-e2e-amd64/tests_status?style=svg)](https://testgrid.k8s.io/q/summary/sig-etcd-periodics/ci-etcd-e2e-amd64)  |
 | presubmit build      | [![sig-etcd-presubmits/pull-etcd-build](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-build/tests_status?style=svg)](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-build)  |
 | presubmit e2e-amd64  | [![sig-etcd-presubmits/pull-etcd-e2e-amd64](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-e2e-amd64/tests_status?style=svg)](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-e2e-amd64)  |
-| presubmit unit-test  | [![sig-etcd-presubmits/pull-etcd-unit-test](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-unit-test/tests_status?style=svg)](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-unit-test)  |
+| presubmit unit-test-amd64  | [![sig-etcd-presubmits/pull-etcd-unit-test-amd64](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-unit-test-amd64/tests_status?style=svg)](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-unit-test-amd64)  |
 | presubmit verify     | [![sig-etcd-presubmits/pull-etcd-verify](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-verify/tests_status?style=svg)](https://testgrid.k8s.io/q/summary/sig-etcd-presubmits/pull-etcd-verify)  |
 | postsubmit build     | [![sig-etcd-postsubmits/post-etcd-build](https://testgrid.k8s.io/q/summary/sig-etcd-postsubmits/post-etcd-build/tests_status?style=svg)](https://testgrid.k8s.io/q/summary/sig-etcd-postsubmits/post-etcd-build)  |
 
@@ -122,6 +122,8 @@ This option can be [used locally](https://code.visualstudio.com/docs/devcontaine
 To get started, create a codespace for this repository by clicking this 👇
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=11225014)
+
+A codespace will open in a web-based version of Visual Studio Code. The [dev container](.devcontainer/devcontainer.json) is fully configured with the software needed for this project.
 
 **Note**: Dev containers is an open spec which is supported by [GitHub Codespaces](https://github.com/codespaces) and [other tools](https://containers.dev/supporting).
 

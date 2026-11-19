@@ -16,6 +16,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -29,18 +30,19 @@ import (
 	"go.etcd.io/etcd/tests/v3/robustness/report"
 )
 
-// RecordingClient provides a semi etcd client (different interface than
+// RecordingClient provides a semi-etcd client (different interface than
 // clientv3.Client) that records all the requests and responses made. Doesn't
-// allow for concurrent requests to confirm to model.AppendableHistory requirements.
+// allow for concurrent requests to conform to model.AppendableHistory requirements.
 type RecordingClient struct {
 	ID     int
-	client clientv3.Client
+	client *clientv3.Client
 	// using baseTime time-measuring operation to get monotonic clock reading
 	// see https://github.com/golang/go/blob/master/src/time/time.go#L17
 	baseTime time.Time
 
 	watchMux        sync.Mutex
 	watchOperations []model.WatchOperation
+	wg              sync.WaitGroup
 	// mux ensures order of request appending.
 	kvMux        sync.Mutex
 	kvOperations *model.AppendableHistory
@@ -65,14 +67,16 @@ func NewRecordingClient(endpoints []string, ids identity.Provider, baseTime time
 	}
 	return &RecordingClient{
 		ID:           ids.NewClientID(),
-		client:       *cc,
+		client:       cc,
 		kvOperations: model.NewAppendableHistory(ids),
 		baseTime:     baseTime,
 	}, nil
 }
 
 func (c *RecordingClient) Close() error {
-	return c.client.Close()
+	err := c.client.Close()
+	c.wg.Wait()
+	return err
 }
 
 func (c *RecordingClient) Report() report.ClientReport {
@@ -89,10 +93,10 @@ func (c *RecordingClient) Do(ctx context.Context, op clientv3.Op) (clientv3.OpRe
 
 func (c *RecordingClient) Get(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
 	op := clientv3.OpGet(key, opts...)
-	return c.Range(ctx, key, string(op.RangeBytes()), op.Rev(), op.Limit())
+	return c.Range(ctx, key, string(op.RangeBytes()), op.Rev(), op.Limit(), op.IsKeysOnly())
 }
 
-func (c *RecordingClient) Range(ctx context.Context, start, end string, revision, limit int64) (*clientv3.GetResponse, error) {
+func (c *RecordingClient) Range(ctx context.Context, start, end string, revision, limit int64, keyOnly bool) (*clientv3.GetResponse, error) {
 	ops := []clientv3.OpOption{}
 	if end != "" {
 		ops = append(ops, clientv3.WithRange(end))
@@ -103,12 +107,42 @@ func (c *RecordingClient) Range(ctx context.Context, start, end string, revision
 	if limit != 0 {
 		ops = append(ops, clientv3.WithLimit(limit))
 	}
+	if keyOnly {
+		ops = append(ops, clientv3.WithKeysOnly())
+	}
 	c.kvMux.Lock()
 	defer c.kvMux.Unlock()
 	callTime := time.Since(c.baseTime)
 	resp, err := c.client.Get(ctx, start, ops...)
 	returnTime := time.Since(c.baseTime)
-	c.kvOperations.AppendRange(start, end, revision, limit, callTime, returnTime, resp, err)
+	c.kvOperations.AppendRange(start, end, revision, limit, keyOnly, callTime, returnTime, resp, err)
+	return resp, err
+}
+
+func (c *RecordingClient) RangeStream(ctx context.Context, start, end string, revision, limit int64, keyOnly bool) (*clientv3.GetResponse, error) {
+	ops := []clientv3.OpOption{}
+	if end != "" {
+		ops = append(ops, clientv3.WithRange(end))
+	}
+	if revision != 0 {
+		ops = append(ops, clientv3.WithRev(revision))
+	}
+	if limit != 0 {
+		ops = append(ops, clientv3.WithLimit(limit))
+	}
+	if keyOnly {
+		ops = append(ops, clientv3.WithKeysOnly())
+	}
+	c.kvMux.Lock()
+	defer c.kvMux.Unlock()
+	callTime := time.Since(c.baseTime)
+	stream, err := c.client.GetStream(ctx, start, ops...)
+	var resp *clientv3.GetResponse
+	if err == nil {
+		resp, err = clientv3.GetStreamToGetResponse(stream)
+	}
+	returnTime := time.Since(c.baseTime)
+	c.kvOperations.AppendRange(start, end, revision, limit, keyOnly, callTime, returnTime, resp, err)
 	return resp, err
 }
 
@@ -215,6 +249,10 @@ func (c *RecordingClient) Defragment(ctx context.Context) (*clientv3.DefragmentR
 	return resp, err
 }
 
+func (c *RecordingClient) GetStream(ctx context.Context, key string, opts ...clientv3.OpOption) (clientv3.GetStreamChan, error) {
+	panic("not implemented")
+}
+
 func (c *RecordingClient) Compact(ctx context.Context, rev int64, _ ...clientv3.CompactOption) (*clientv3.CompactResponse, error) {
 	c.kvMux.Lock()
 	defer c.kvMux.Unlock()
@@ -305,21 +343,29 @@ func (c *RecordingClient) watch(ctx context.Context, request model.WatchRequest)
 	}
 	respCh := make(chan clientv3.WatchResponse)
 
+	responses := []model.WatchResponse{}
 	c.watchMux.Lock()
 	c.watchOperations = append(c.watchOperations, model.WatchOperation{
 		Request:   request,
-		Responses: []model.WatchResponse{},
+		Responses: responses,
 	})
 	index := len(c.watchOperations) - 1
 	c.watchMux.Unlock()
 
+	c.wg.Add(1)
 	go func() {
+		defer c.wg.Done()
 		defer close(respCh)
 		for r := range c.client.Watch(ctx, request.Key, ops...) {
-			c.watchOperations[index].Responses = append(c.watchOperations[index].Responses, ToWatchResponse(r, c.baseTime))
+			responses = append(responses, ToWatchResponse(r, c.baseTime))
+			c.watchMux.Lock()
+			c.watchOperations[index].Responses = responses
+			c.watchMux.Unlock()
 			select {
 			case respCh <- r:
 			case <-ctx.Done():
+				return
+			case <-c.client.Ctx().Done():
 				return
 			}
 		}
@@ -336,7 +382,7 @@ func ToWatchResponse(r clientv3.WatchResponse, baseTime time.Time) model.WatchRe
 	// see https://github.com/golang/go/blob/master/src/time/time.go#L17
 	resp := model.WatchResponse{Time: time.Since(baseTime)}
 	for _, event := range r.Events {
-		resp.Events = append(resp.Events, toWatchEvent(*event))
+		resp.Events = append(resp.Events, toWatchEvent(event))
 	}
 	resp.IsProgressNotify = r.IsProgressNotify()
 	resp.Revision = r.Header.Revision
@@ -347,7 +393,7 @@ func ToWatchResponse(r clientv3.WatchResponse, baseTime time.Time) model.WatchRe
 	return resp
 }
 
-func toWatchEvent(event clientv3.Event) (watch model.WatchEvent) {
+func toWatchEvent(event *clientv3.Event) (watch model.WatchEvent) {
 	watch.Revision = event.Kv.ModRevision
 	watch.Key = string(event.Kv.Key)
 	watch.Value = model.ToValueOrHash(string(event.Kv.Value))
@@ -362,12 +408,90 @@ func toWatchEvent(event clientv3.Event) (watch model.WatchEvent) {
 	watch.IsCreate = event.IsCreate()
 
 	switch event.Type {
-	case mvccpb.PUT:
+	case mvccpb.Event_PUT:
 		watch.Type = model.PutOperation
-	case mvccpb.DELETE:
+	case mvccpb.Event_DELETE:
 		watch.Type = model.DeleteOperation
 	default:
 		panic(fmt.Sprintf("Unexpected event type: %s", event.Type))
 	}
 	return watch
+}
+
+type ClientSet struct {
+	idProvider identity.Provider
+	baseTime   time.Time
+
+	mux     sync.Mutex
+	closed  bool
+	clients []*RecordingClient
+	reports []report.ClientReport
+}
+
+func NewSet(ids identity.Provider, baseTime time.Time) *ClientSet {
+	return &ClientSet{
+		idProvider: ids,
+		baseTime:   baseTime,
+
+		clients: []*RecordingClient{},
+	}
+}
+
+func (cs *ClientSet) NewClient(endpoints []string) (*RecordingClient, error) {
+	cs.mux.Lock()
+	defer cs.mux.Unlock()
+	if cs.closed {
+		return nil, errors.New("the clientset is already closed")
+	}
+	cli, err := NewRecordingClient(endpoints, cs.idProvider, cs.baseTime)
+	if err != nil {
+		return nil, err
+	}
+	cs.clients = append(cs.clients, cli)
+	return cli, nil
+}
+
+func (cs *ClientSet) Reports() []report.ClientReport {
+	cs.mux.Lock()
+	defer cs.mux.Unlock()
+	if !cs.closed {
+		cs.close()
+	}
+	if cs.reports == nil {
+		reports := cs.generateReports()
+		cs.reports = reports
+	}
+	return cs.reports
+}
+
+func (cs *ClientSet) Close() {
+	cs.mux.Lock()
+	defer cs.mux.Unlock()
+	cs.close()
+}
+
+func (cs *ClientSet) close() {
+	if cs.closed {
+		return
+	}
+	for _, c := range cs.clients {
+		c.Close()
+	}
+	cs.closed = true
+}
+
+func (cs *ClientSet) generateReports() []report.ClientReport {
+	reports := make([]report.ClientReport, 0, len(cs.clients))
+	for _, c := range cs.clients {
+		reports = append(reports, c.Report())
+	}
+	return reports
+}
+
+func (cs *ClientSet) IdentityProvider() identity.Provider {
+	return cs.idProvider
+}
+
+func (cs *ClientSet) BaseTime() time.Time {
+	return cs.baseTime
 }

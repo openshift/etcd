@@ -113,9 +113,6 @@ func NewCheckCommand() *cobra.Command {
 		GroupID: groupUtilityID,
 	}
 
-	cc.AddCommand(NewCheckPerfCommand())
-	cc.AddCommand(NewCheckDatascaleCommand())
-
 	return cc
 }
 

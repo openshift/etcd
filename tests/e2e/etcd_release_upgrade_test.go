@@ -17,6 +17,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,11 +25,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/api/v3/version"
 	"go.etcd.io/etcd/client/pkg/v3/fileutil"
 	"go.etcd.io/etcd/pkg/v3/expect"
 	"go.etcd.io/etcd/tests/v3/framework/config"
 	"go.etcd.io/etcd/tests/v3/framework/e2e"
+	"go.etcd.io/etcd/tests/v3/framework/testutils"
 )
 
 // TestReleaseUpgrade ensures that changes to master branch does not affect
@@ -40,7 +43,7 @@ func TestReleaseUpgrade(t *testing.T) {
 
 	e2e.BeforeTest(t)
 
-	epc, err := e2e.NewEtcdProcessCluster(context.TODO(), t,
+	epc, err := e2e.NewEtcdProcessCluster(t.Context(), t,
 		e2e.WithVersion(e2e.LastVersion),
 		e2e.WithSnapshotCount(3),
 		e2e.WithBasePeerScheme("unix"), // to avoid port conflict
@@ -83,7 +86,7 @@ func TestReleaseUpgrade(t *testing.T) {
 		epc.Procs[i].Config().KeepDataDir = true
 
 		t.Logf("Restarting node in the new version: %v", i)
-		if err = epc.Procs[i].Restart(context.TODO()); err != nil {
+		if err = epc.Procs[i].Restart(t.Context()); err != nil {
 			t.Fatalf("error restarting etcd process (%v)", err)
 		}
 
@@ -120,7 +123,7 @@ func TestReleaseUpgradeWithRestart(t *testing.T) {
 
 	e2e.BeforeTest(t)
 
-	epc, err := e2e.NewEtcdProcessCluster(context.TODO(), t,
+	epc, err := e2e.NewEtcdProcessCluster(t.Context(), t,
 		e2e.WithVersion(e2e.LastVersion),
 		e2e.WithSnapshotCount(10),
 		e2e.WithBasePeerScheme("unix"),
@@ -159,7 +162,7 @@ func TestReleaseUpgradeWithRestart(t *testing.T) {
 		go func(i int) {
 			epc.Procs[i].Config().ExecPath = e2e.BinPath.Etcd
 			epc.Procs[i].Config().KeepDataDir = true
-			assert.NoErrorf(t, epc.Procs[i].Restart(context.TODO()), "error restarting etcd process")
+			assert.NoErrorf(t, epc.Procs[i].Restart(t.Context()), "error restarting etcd process")
 			wg.Done()
 		}(i)
 	}
@@ -196,7 +199,7 @@ func TestClusterUpgradeAfterPromotingMembers(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 
 			epc, _ := mustCreateNewClusterByPromotingMembers(t, e2e.LastVersion, clusterSize,
 				e2e.WithSnapshotCount(uint64(tc.snapshot)))
@@ -205,7 +208,7 @@ func TestClusterUpgradeAfterPromotingMembers(t *testing.T) {
 			}()
 
 			for i := 0; i < tc.snapshot; i++ {
-				err = epc.Etcdctl().Put(ctx, "foo", "bar", config.PutOptions{})
+				_, err = epc.Etcdctl().Put(ctx, "foo", "bar", config.PutOptions{})
 				require.NoError(t, err)
 			}
 
@@ -217,9 +220,77 @@ func TestClusterUpgradeAfterPromotingMembers(t *testing.T) {
 
 			t.Logf("Checking all members are ready to serve client requests")
 			for i := 0; i < clusterSize; i++ {
-				err = epc.Procs[i].Etcdctl().Put(context.Background(), "foo", "bar", config.PutOptions{})
+				_, err = epc.Procs[i].Etcdctl().Put(t.Context(), "foo", "bar", config.PutOptions{})
 				require.NoError(t, err)
 			}
 		})
+	}
+}
+
+func mustCreateNewClusterByPromotingMembers(t *testing.T, clusterVersion e2e.ClusterVersion, clusterSize int, opts ...e2e.EPClusterOption) (*e2e.EtcdProcessCluster, []*etcdserverpb.Member) {
+	require.GreaterOrEqualf(t, clusterSize, 1, "clusterSize must be at least 1")
+
+	ctx := t.Context()
+
+	t.Logf("Creating new etcd cluster - version: %s, clusterSize: %v", clusterVersion, clusterSize)
+	opts = append(opts, e2e.WithVersion(clusterVersion), e2e.WithClusterSize(1))
+	epc, err := e2e.NewEtcdProcessCluster(ctx, t, opts...)
+	require.NoErrorf(t, err, "failed to start first etcd process")
+	defer func() {
+		if t.Failed() {
+			epc.Close()
+		}
+	}()
+
+	var promotedMembers []*etcdserverpb.Member
+	for i := 1; i < clusterSize; i++ {
+		var (
+			memberID uint64
+			aerr     error
+		)
+
+		// NOTE: New promoted member needs time to get connected.
+		t.Logf("[%d] Adding new member as learner", i)
+		testutils.ExecuteWithTimeout(t, 1*time.Minute, func() {
+			for {
+				memberID, aerr = epc.StartNewProc(ctx, nil, t, true)
+				if aerr != nil {
+					if strings.Contains(aerr.Error(), "etcdserver: unhealthy cluster") {
+						time.Sleep(1 * time.Second)
+						continue
+					}
+				}
+				break
+			}
+		})
+		require.NoError(t, aerr)
+
+		t.Logf("[%d] Promoting member (%x)", i, memberID)
+		etcdctl := epc.Procs[0].Etcdctl()
+		resp, merr := etcdctl.MemberPromote(ctx, memberID)
+		require.NoError(t, merr)
+
+		for _, m := range resp.Members {
+			if m.ID == memberID {
+				promotedMembers = append(promotedMembers, m)
+			}
+		}
+	}
+
+	t.Log("Ensure all members are voting members from user perspective")
+	ensureAllMembersAreVotingMembers(t, epc)
+
+	return epc, promotedMembers
+}
+
+func ensureAllMembersAreVotingMembers(t *testing.T, epc *e2e.EtcdProcessCluster) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	resp, err := epc.Etcdctl().MemberList(ctx, false)
+	require.NoError(t, err)
+	require.Len(t, resp.Members, len(epc.Procs))
+	for _, m := range resp.Members {
+		require.Falsef(t, m.IsLearner, "node(%x)", m.ID)
 	}
 }

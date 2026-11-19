@@ -78,7 +78,7 @@ func TestIssue20271(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	t.Log("Step 4: Restarting the first two members to change term and trigger new leader to send snapshot file to the third member.")
+	t.Log("Step 4: Restarting the first two members to re-connect to the paused member, so the inflight messages will be dropped. This will trigger new leader to send snapshot file to the third member.")
 	for _, proc := range epc.Procs[:2] {
 		require.NoError(t, proc.Restart(ctx))
 	}
@@ -94,11 +94,11 @@ to override boltdb file. So, for the following changes, the third member will co
 
 	t.Log("Step 6: Write some data to the cluster")
 	for i := 0; i < snapCount/2; i++ {
-		err = epc.Procs[0].Etcdctl().Put(ctx, fmt.Sprintf("foo%d", i), strings.Repeat("Oops", 1), config.PutOptions{})
+		_, err = epc.Procs[0].Etcdctl().Put(ctx, fmt.Sprintf("foo%d", i), strings.Repeat("Oops", 1), config.PutOptions{})
 		require.NoError(t, err)
 	}
 
-	t.Log("Step 7: Restart the third member. It recovers from the new boltdb file. Therefore, data writen in Step 6 is lost.")
+	t.Log("Step 7: Restart the third member. It recovers from the new boltdb file. Therefore, data written in Step 6 is lost.")
 	require.NoError(t, epc.Procs[2].Restart(ctx))
 
 	t.Log("Step 8: Check hashkv of each member")

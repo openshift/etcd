@@ -44,9 +44,7 @@ const (
 type ServerConfig struct {
 	Name string
 
-	DiscoveryURL   string
-	DiscoveryProxy string
-	DiscoveryCfg   v3discovery.DiscoveryConfig
+	DiscoveryCfg v3discovery.DiscoveryConfig
 
 	ClientURLs types.URLs
 	PeerURLs   types.URLs
@@ -191,12 +189,6 @@ type ServerConfig struct {
 	// be refined to mlock in-use area of bbolt only.
 	MemoryMlock bool `json:"memory-mlock"`
 
-	// ExperimentalTxnModeWriteWithSharedBuffer enable write transaction to use
-	// a shared buffer in its readonly check operations.
-	// TODO: Delete in v3.7
-	// Deprecated: Use TxnModeWriteWithSharedBuffer Feature Gate instead. Will be decommissioned in v3.7.
-	ExperimentalTxnModeWriteWithSharedBuffer bool `json:"experimental-txn-mode-write-with-shared-buffer"`
-
 	// BootstrapDefragThresholdMegabytes is the minimum number of megabytes needed to be freed for etcd server to
 	// consider running defrag during bootstrap. Needs to be set to non-zero value to take effect.
 	BootstrapDefragThresholdMegabytes uint `json:"bootstrap-defrag-threshold-megabytes"`
@@ -210,14 +202,11 @@ type ServerConfig struct {
 	// MaxLearners sets a limit to the number of learner members that can exist in the cluster membership.
 	MaxLearners int `json:"max-learners"`
 
-	// ExperimentalMaxLearners sets a limit to the number of learner members that can exist in the cluster membership.
-	ExperimentalMaxLearners int `json:"experimental-max-learners"`
-
 	// V2Deprecation defines a phase of v2store deprecation process.
 	V2Deprecation V2DeprecationEnum `json:"v2-deprecation"`
 
-	// ExperimentalLocalAddress is the local IP address to use when communicating with a peer.
-	ExperimentalLocalAddress string `json:"experimental-local-address"`
+	// LocalAddress is the local IP address to use when communicating with a peer.
+	LocalAddress string `json:"local-address"`
 
 	// ServerFeatureGate is a server level feature gate
 	ServerFeatureGate featuregate.FeatureGate
@@ -243,8 +232,8 @@ func (c *ServerConfig) VerifyBootstrap() error {
 	if CheckDuplicateURL(c.InitialPeerURLsMap) {
 		return fmt.Errorf("initial cluster %s has duplicate url", c.InitialPeerURLsMap)
 	}
-	if c.InitialPeerURLsMap.String() == "" && c.DiscoveryURL == "" {
-		return fmt.Errorf("initial cluster unset and no discovery URL found")
+	if c.InitialPeerURLsMap.String() == "" && !c.ShouldDiscover() {
+		return fmt.Errorf("initial cluster unset and no discovery endpoints found")
 	}
 	return nil
 }
@@ -260,7 +249,7 @@ func (c *ServerConfig) VerifyJoinExisting() error {
 	if CheckDuplicateURL(c.InitialPeerURLsMap) {
 		return fmt.Errorf("initial cluster %s has duplicate url", c.InitialPeerURLsMap)
 	}
-	if c.DiscoveryURL != "" {
+	if c.ShouldDiscover() {
 		return fmt.Errorf("discovery URL should not be set when joining existing initial cluster")
 	}
 	return nil
@@ -338,7 +327,7 @@ func (c *ServerConfig) WALDir() string {
 func (c *ServerConfig) SnapDir() string { return filepath.Join(c.MemberDir(), "snap") }
 
 func (c *ServerConfig) ShouldDiscover() bool {
-	return c.DiscoveryURL != "" || len(c.DiscoveryCfg.Endpoints) > 0
+	return len(c.DiscoveryCfg.Endpoints) > 0
 }
 
 // ReqTimeout returns timeout for request to finish.

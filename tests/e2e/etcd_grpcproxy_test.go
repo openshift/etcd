@@ -33,7 +33,7 @@ import (
 
 func TestGrpcProxyAutoSync(t *testing.T) {
 	e2e.SkipInShortMode(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	epc, err := e2e.NewEtcdProcessCluster(ctx, t, e2e.WithClusterSize(1))
@@ -61,7 +61,7 @@ func TestGrpcProxyAutoSync(t *testing.T) {
 
 	proxyCtl, err := e2e.NewEtcdctl(e2e.ClientConfig{}, []string{proxyClientURL})
 	require.NoError(t, err)
-	err = proxyCtl.Put(ctx, "k1", "v1", config.PutOptions{})
+	_, err = proxyCtl.Put(ctx, "k1", "v1", config.PutOptions{})
 	require.NoError(t, err)
 
 	// Add and start second member
@@ -93,7 +93,7 @@ func TestGrpcProxyAutoSync(t *testing.T) {
 
 func TestGrpcProxyTLSVersions(t *testing.T) {
 	e2e.SkipInShortMode(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	epc, err := e2e.NewEtcdProcessCluster(ctx, t, e2e.WithClusterSize(1))

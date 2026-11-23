@@ -80,3 +80,5 @@ replace (
 	go.etcd.io/etcd/client/v3 => ../client/v3
 	go.etcd.io/etcd/pkg/v3 => ../pkg
 )
+
+replace go.etcd.io/bbolt => github.com/openshift/bbolt v0.0.0-20261112222635-79a289a04a0c

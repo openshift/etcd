@@ -24,6 +24,7 @@ require (
 	github.com/golang/protobuf v1.5.4
 	github.com/google/go-cmp v0.7.0
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	go.etcd.io/bbolt v1.5.0
 	go.etcd.io/etcd/api/v3 v3.7.4
@@ -77,7 +78,6 @@ require (
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
 	github.com/xiang90/probing v0.0.0-20221125231312-a49e3df8f510 // indirect
 	go.etcd.io/gofail v0.2.0 // indirect
@@ -105,3 +105,5 @@ require (
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace go.etcd.io/bbolt => github.com/openshift/bbolt v0.0.0-20261112222635-79a289a04a0c

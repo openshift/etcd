@@ -107,8 +107,10 @@ var checkDatascaleCfgMap = map[string]checkDatascaleCfg{
 // NewCheckCommand returns the cobra command for "check".
 func NewCheckCommand() *cobra.Command {
 	cc := &cobra.Command{
-		Use:   "check <subcommand> is no longer supported in OpenShift. Performance analysis should be performed using metrics, please see the etcd dashboards",
-		Short: "command no longer supported in OpenShift",
+		Use:     "check <subcommand>",
+		Short:   "commands for checking properties of the etcd cluster. Use `etcdctl check --help` to see subcommands",
+		Long:    "commands for checking properties of the etcd cluster",
+		GroupID: groupUtilityID,
 	}
 
 	return cc
@@ -179,7 +181,7 @@ func newCheckPerfCommand(cmd *cobra.Command, args []string) {
 	bar := pb.New(cfg.duration)
 	bar.Start()
 
-	r := report.NewReport("%4.4f")
+	r := report.NewReport("%4.4f", "", false)
 	var wg sync.WaitGroup
 
 	wg.Add(len(clients))
@@ -350,7 +352,7 @@ func newCheckDatascaleCommand(cmd *cobra.Command, args []string) {
 	ksize, vsize := 512, 512
 	k, v := make([]byte, ksize), string(make([]byte, vsize))
 
-	r := report.NewReport("%4.4f")
+	r := report.NewReport("%4.4f", "", false)
 	var wg sync.WaitGroup
 	wg.Add(len(clients))
 

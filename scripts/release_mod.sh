@@ -1,4 +1,17 @@
 #!/usr/bin/env bash
+# Copyright 2025 The etcd Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # Examples:
 
@@ -24,17 +37,23 @@ function _cmd() {
   log_info "  - push_mod_tags    - Tags HEAD with all modules versions tags and pushes it to \${REMOTE_REPO}."
 }
 
-# update_module_version [v3version]
+# update_module_version [v2version] [v3version]
 #   Updates versions of cross-references in all internal references in current module.
 function update_module_version() {
   local v3version="${1}"
+  local v2version="${2}"
   local modules
   run go mod tidy
-  modules=$(run go list -f '{{if not .Main}}{{if not .Indirect}}{{.Path}}{{end}}{{end}}' -m all)
+  modules=$(go mod edit -json | jq -r '.Require[] | select(.Indirect | not) | .Path')
 
   v3deps=$(echo "${modules}" | grep -E "${ROOT_MODULE}/.*/v3")
   for dep in ${v3deps}; do
     run go mod edit -require "${dep}@${v3version}"
+  done
+
+  v2deps=$(echo "${modules}" | grep -E "${ROOT_MODULE}/.*/v2")
+  for dep in ${v2deps}; do
+    run go mod edit -require "${dep}@${v2version}"
   done
 
   run go mod tidy
@@ -55,14 +74,19 @@ function update_versions_cmd() {
   fi
 
   local v3version="${TARGET_VERSION}"
+  local v2version
+  # converts e.g. v3.5.0-alpha.0 --> v2.305.0-alpha.0
+  # shellcheck disable=SC2001
+  v2version="$(echo "${TARGET_VERSION}" | sed 's|^v3.\([0-9]*\).|v2.30\1.|g')"
 
   log_info "DRY_RUN       : ${DRY_RUN}"
   log_info "TARGET_VERSION: ${TARGET_VERSION}"
   log_info ""
   log_info "v3version: ${v3version}"
+  log_info "v2version: ${v2version}"
 
-  run_for_modules update_module_version "${v3version}"
-  run_for_modules mod_tidy_fix || exit 2
+  run_for_workspace_modules update_module_version "${v3version}" "${v2version}"
+  run_for_workspace_modules mod_tidy_fix || exit 2
 }
 
 function get_gpg_key {
@@ -86,16 +110,16 @@ function push_mod_tags_cmd {
 
   # Any module ccan be used for this
   local main_version
-  main_version=$(go list -f '{{.Version}}' -m "${ROOT_MODULE}/api/v3")
+  main_version=$(go mod edit -json | jq -r '.Require[] | select(.Path == "'"${ROOT_MODULE}"'/api/v3") | .Version')
   local tags=()
 
   keyid=$(get_gpg_key) || return 2
 
   for module in $(modules); do
     local version
-    version=$(go list -f '{{.Version}}' -m "${module}")
+    version=$(go mod edit -json | jq -r '.Require[] | select(.Path == "'"${module}"'") | .Version')
     local path
-    path=$(go list -f '{{.Path}}' -m "${module}")
+    path=$(go mod edit -json | jq -r '.Require[] | select(.Path == "'"${module}"'") | .Path')
     local subdir="${path//${ROOT_MODULE}\//}"
     local tag
     if [ -z "${version}" ]; then
@@ -110,7 +134,7 @@ function push_mod_tags_cmd {
     # consider main-module's tag as the latest.
     run sleep 2
     run git tag --local-user "${keyid}" --sign "${tag}" --message "${version}"
-    tags=("${tags[@]}" "${tag}")
+    tags+=("${tag}")
   done
   maybe_run git push -f "${REMOTE_REPO}" "${tags[@]}"
 }

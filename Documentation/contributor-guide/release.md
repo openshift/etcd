@@ -6,15 +6,17 @@ The procedure includes some manual steps for sanity checking, but it can probabl
 
 ## Release management
 
-The following pool of release candidates manages the release of each etcd major/minor version as well as manages patches
+Under the leadership of **James Blair** [@jmhbnz](https://github.com/jmhbnz) and **Ivan Valdes Castillo** [@ivanvc](https://github.com/ivanvc), the following pool of release candidates manages the release of each etcd major/minor version as well as manages patches
 to each stable release branch. They are responsible for communicating the timelines and status of each release and
 for ensuring the stability of the release branch.
 
 - Benjamin Wang [@ahrtr](https://github.com/ahrtr)
+- Fu Wei [@fuweid](https://github.com/fuweid)
 - James Blair [@jmhbnz](https://github.com/jmhbnz)
+- Ivan Valdes Castillo [@ivanvc](https://github.com/ivanvc)
 - Marek Siarkowicz [@serathius](https://github.com/serathius)
 - Sahdev Zala [@spzala](https://github.com/spzala)
-- Wenjia Zhang [@wenjiaswe](https://github.com/wenjiaswe)
+- Siyuan Zhang [@siyuanfoundation](https://github.com/siyuanfoundation)
 
 All release version numbers follow the format of [semantic versioning 2.0.0](http://semver.org/).
 
@@ -68,10 +70,14 @@ which don't need to be executed before releasing each version.
 
 ### Release steps
 
+At least one day before the release:
+
 1. Raise an issue to publish the release plan, e.g. [issues/17350](https://github.com/etcd-io/etcd/issues/17350).
-2. Raise a `kubernetes/org` pull request to temporarily elevate permissions for the GitHub release team.
-3. Once permissions are elevated, temporarily relax [branch protections](https://github.com/etcd-io/etcd/settings/branches) to allow pushing changes directly to `release-*` branches in GitHub.
-4. Verify you can pass the authentication to the image registries,
+2. Raise a `kubernetes/org` pull request ([example PR](https://github.com/kubernetes/org/pull/5582)) to ensure members of the release team are added to the [release github team](https://github.com/orgs/etcd-io/teams/release-etcd).
+
+On the day of the release:
+
+1. Verify you can pass the authentication to the image registries,
    - `docker login gcr.io`
    - `docker login quay.io`
      - If the release person doesn't have access to 1password, one of the owners (@ahrtr, @ivanvc, @jmhbnz, @serathius) needs to share the password with them per [this guide](https://support.1password.com/share-items/). See rough steps below,
@@ -80,45 +86,56 @@ which don't need to be executed before releasing each version.
        - Select `Password of quay.io`.
        - Click `Share` on the top right, and set expiration as `1 hour` and only available to the release person using his/her email.
        - Click `Copy Link` then send the link to the release person via slack or email.
-5. Clone the etcd repository and checkout the target branch,
+2. Clone the etcd repository and checkout the target branch,
    - `git clone --branch release-3.X git@github.com:etcd-io/etcd.git`
-6. Run the release script under the repository's root directory, replacing `${VERSION}` with a value without the `v` prefix, i.e. `3.5.13`.
+3. Run the release script under the repository's root directory, replacing `${VERSION}` with a value without the `v` prefix, i.e. `3.5.13`.
    - `DRY_RUN=false ./scripts/release.sh ${VERSION}`
    - **NOTE:** When doing a pre-release (i.e., a version from the main branch, 3.6.0-alpha.2), you will need to explicitly set the branch to main:
-     ```
+
+     ```bash
      DRY_RUN=false BRANCH=main ./scripts/release.sh ${VERSION}
      ```
 
    It generates all release binaries under the directory `/tmp/etcd-release-${VERSION}/etcd/release/` and images. Binaries are pushed to the Google Cloud bucket
    under project `etcd-development`, and images are pushed to `quay.io` and `gcr.io`.
-7. Publish the release page on GitHub
+   - It is advisable to do a dry run before the actual release. This will create a `/tmp` directory. Do **NOT** forget to remove this directory before the actual release.
+
+      ```bash
+      DRY_RUN=true BRANCH=${BRANCH} ./scripts/release.sh ${VERSION}
+      ```
+
+4. Publish the release page on GitHub
    - Open the **draft** release URL shown by the release script
    - Click the pen button at the top right to edit the release
    - Review that it looks correct, reviewing that the bottom checkboxes are checked depending on the
-     release version (v3.4 no checkboxes, v3.5 has the set as latest release checkbox checked,
-     v3.6 has the set as pre-release checkbox checked)
+     release version (v3.4 & v3.5 no checkboxes, v3.6 has the set as latest release checkbox checked,
+     v3.7 has the set as pre-release checkbox checked)
    - Then, publish the release
-8. Announce to the etcd-dev googlegroup
+5. Announce to the etcd-dev googlegroup
 
    Follow the format of previous release emails sent to etcd-dev@googlegroups.com, see an example below. After sending out the email, ask one of the mailing list maintainers to approve the email from the pending list. Additionally, label the release email as `Release`.
 
-```text
-Hello,
+   ```text
+   Hello,
 
-etcd v3.4.30 is now public!
+   etcd v3.4.30 is now public!
 
-https://github.com/etcd-io/etcd/releases/tag/v3.4.30
+   https://github.com/etcd-io/etcd/releases/tag/v3.4.30
 
-Thanks to everyone who contributed to the release!
+   Thanks to everyone who contributed to the release!
 
-etcd team
-```
+   etcd team
+   ```
 
-9. Update the changelog to reflect the correct release date.
-10. Paste the release link to the issue raised in Step 1 and close the issue.
-11. Restore standard branch protection settings and raise a follow-up `kubernetes/org` pull request to return to least privilege permissions.
-12. Crease a new stable branch through `git push origin release-${VERSION_MAJOR}.${VERSION_MINOR}` if this is a new major or minor stable release.
-13. Re-generate a new password for quay.io if needed (e.g. shared to a contributor who isn't in the release team, and we should rotate the password at least once every 3 months).
+6. Update the changelog to reflect the correct release date.
+7. Paste the release link to the issue raised in Step 1 and close the issue.
+8. Raise a follow-up `kubernetes/org` pull request to return the GitHub release team to empty, least privilege state.
+9. Crease a new stable branch through `git push origin release-${VERSION_MAJOR}.${VERSION_MINOR}` if this is a new major or minor stable release.
+10. Re-generate a new password for quay.io if needed (e.g. shared to a contributor who isn't in the release team, and we should rotate the password at least once every 3 months).
+11. Bump the new etcd release in Kubernetes, refer to [Bump etcd Version in Kubernetes](bump_etcd_version_k8s.md).
+
+- For etcd 3.6 patches, bump it to Kubernetes 1.34 and all newer minor versions (including `master` branch)
+- For etcd 3.5 patches, bump it to Kubernetes 1.33 and all older supported versions
 
 #### Release known issues
 

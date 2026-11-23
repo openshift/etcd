@@ -48,7 +48,8 @@ func TestNonBlockingDefragNoSpace(t *testing.T) {
 
 			// Write data before defrag
 			for i := range 10 {
-				require.NoError(t, member.Etcdctl().Put(context.Background(), fmt.Sprintf("key_%d", i), "value", config.PutOptions{}))
+				_, err := member.Etcdctl().Put(context.Background(), fmt.Sprintf("key_%d", i), "value", config.PutOptions{})
+				require.NoError(t, err)
 			}
 
 			// Trigger a failed defrag
@@ -56,7 +57,8 @@ func TestNonBlockingDefragNoSpace(t *testing.T) {
 			require.ErrorContains(t, member.Etcdctl().Defragment(context.Background(), config.DefragOption{Timeout: time.Minute}), tc.err)
 
 			// Verify server is still functional after failed defrag
-			require.NoError(t, member.Etcdctl().Put(context.Background(), "after_defrag", "ok", config.PutOptions{}))
+			_, err = member.Etcdctl().Put(context.Background(), "after_defrag", "ok", config.PutOptions{})
+			require.NoError(t, err)
 			value, err := member.Etcdctl().Get(context.Background(), "after_defrag", config.GetOptions{})
 			require.NoError(t, err)
 			require.Len(t, value.Kvs, 1)
@@ -88,7 +90,8 @@ func TestNonBlockingDefragSuccess(t *testing.T) {
 
 	// Write data before defrag
 	for i := range 100 {
-		require.NoError(t, member.Etcdctl().Put(context.Background(), fmt.Sprintf("key_%04d", i), "value", config.PutOptions{}))
+		_, err := member.Etcdctl().Put(context.Background(), fmt.Sprintf("key_%04d", i), "value", config.PutOptions{})
+		require.NoError(t, err)
 	}
 
 	// Delete half to make defrag meaningful
@@ -115,7 +118,8 @@ func TestNonBlockingDefragSuccess(t *testing.T) {
 	}
 
 	// Write new data after defrag
-	require.NoError(t, member.Etcdctl().Put(context.Background(), "post_defrag", "ok", config.PutOptions{}))
+	_, err = member.Etcdctl().Put(context.Background(), "post_defrag", "ok", config.PutOptions{})
+	require.NoError(t, err)
 	value, err := member.Etcdctl().Get(context.Background(), "post_defrag", config.GetOptions{})
 	require.NoError(t, err)
 	require.Equal(t, "ok", string(value.Kvs[0].Value))

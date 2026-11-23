@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.etcd.io/etcd/client/pkg/v3/types"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
@@ -39,12 +40,9 @@ func describeEtcdResponse(request EtcdRequest, response MaybeEtcdResponse) strin
 		return fmt.Sprintf("%s, rev: %d", describeRangeResponse(request.Range.RangeOptions, *response.Range), response.Revision)
 	case Txn:
 		return fmt.Sprintf("%s, rev: %d", describeTxnResponse(request.Txn, response.Txn), response.Revision)
-	case LeaseGrant, LeaseRevoke, Defragment:
-		if response.Revision == 0 {
-			return "ok"
-		}
+	case LeaseGrant, LeaseRevoke:
 		return fmt.Sprintf("ok, rev: %d", response.Revision)
-	case Compact:
+	case Compact, Defragment:
 		return "ok"
 	default:
 		return fmt.Sprintf("<! unknown request type: %q !>", request.Type)
@@ -80,6 +78,57 @@ func describeEtcdRequest(request EtcdRequest) string {
 	default:
 		return fmt.Sprintf("<! unknown request type: %q !>", request.Type)
 	}
+}
+
+func describeEtcdState(state EtcdState) string {
+	descHTML := make([]string, 0)
+
+	descHTML = append(descHTML, fmt.Sprintf("<p style=\"margin: 0.25em 0;\">state, rev: %d, compactRev: %d</p>", state.Revision, state.CompactRevision))
+
+	keys := []string{}
+	for i, v := range state.KeyValues {
+		if v == nil {
+			continue
+		}
+		keys = append(keys, state.Keys[i])
+	}
+
+	if len(keys) > 0 {
+		descHTML = append(descHTML, "keys: <ul style=\"margin: 0.25em 0;\">")
+
+		keys, values, leases := state.KeysValueLeases()
+		for i := range keys {
+			descHTML = append(descHTML, fmt.Sprintf("<li style=\"margin: 0.25em 0;\"><strong>%s</strong> - ", keys[i]))
+
+			value := values[i]
+			if value.Value.Value != "" {
+				descHTML = append(descHTML, fmt.Sprintf("val: %q, ", value.Value.Value))
+			}
+			if value.Value.Hash != 0 {
+				descHTML = append(descHTML, fmt.Sprintf("hash: %d, ", value.Value.Hash))
+			}
+			descHTML = append(descHTML, fmt.Sprintf("mod: %d, ver: %d", value.ModRevision, value.Version))
+			lease := leases[i]
+			if lease != 0 {
+				descHTML = append(descHTML, fmt.Sprintf(", lease: %d", lease))
+			}
+
+			descHTML = append(descHTML, "</li>")
+		}
+
+		descHTML = append(descHTML, "</ul>")
+	}
+
+	leases := state.leases()
+	if len(leases) > 0 {
+		descHTML = append(descHTML, "leases: <ul style=\"margin: 0.25em 0;\">")
+		for _, lease := range leases {
+			descHTML = append(descHTML, fmt.Sprintf("<li style=\"margin: 0.25em 0;\"><strong>%d</strong></li>", lease))
+		}
+		descHTML = append(descHTML, "</ul>")
+	}
+
+	return strings.Join(descHTML, "")
 }
 
 func describeGuaranteedTxn(txn *TxnRequest) string {
@@ -170,6 +219,9 @@ func describeRangeRequest(opts RangeOptions, revision int64) string {
 	if opts.Limit != 0 {
 		kwargs = append(kwargs, fmt.Sprintf("limit=%d", opts.Limit))
 	}
+	if opts.KeysOnly {
+		kwargs = append(kwargs, "keysOnly")
+	}
 	kwargsString := strings.Join(kwargs, ", ")
 	if kwargsString != "" {
 		kwargsString = ", " + kwargsString
@@ -179,6 +231,8 @@ func describeRangeRequest(opts RangeOptions, revision int64) string {
 		return fmt.Sprintf("get(%q%s)", opts.Start, kwargsString)
 	case opts.End == clientv3.GetPrefixRangeEnd(opts.Start):
 		return fmt.Sprintf("list(%q%s)", opts.Start, kwargsString)
+	case strings.HasSuffix(opts.Start, "\x00") && strings.HasSuffix(opts.End, "0") && strings.HasPrefix(opts.Start, opts.End[:len(opts.End)-1]):
+		return fmt.Sprintf("list[continued](%q%s)", strings.TrimRight(opts.Start, "\x00"), kwargsString)
 	default:
 		return fmt.Sprintf("range(%q..%q%s)", opts.Start, opts.End, kwargsString)
 	}
@@ -201,7 +255,11 @@ func describeRangeResponse(request RangeOptions, response RangeResponse) string 
 	if request.End != "" {
 		kvs := make([]string, len(response.KVs))
 		for i, kv := range response.KVs {
-			kvs[i] = describeValueOrHash(kv.Value)
+			if request.KeysOnly {
+				kvs[i] = kv.Key
+			} else {
+				kvs[i] = fmt.Sprintf("%s:%s", kv.Key, describeValueOrHash(kv.Value))
+			}
 		}
 		return fmt.Sprintf("[%s], count: %d", strings.Join(kvs, ","), response.Count)
 	}
@@ -212,9 +270,16 @@ func describeRangeResponse(request RangeOptions, response RangeResponse) string 
 	return describeValueOrHash(response.KVs[0].Value)
 }
 
+func DescribeOperationMetadata(response MaybeEtcdResponse) string {
+	if response.MemberID != 0 {
+		return fmt.Sprintf("memberID: %s", types.ID(response.MemberID).String())
+	}
+	return ""
+}
+
 func describeValueOrHash(value ValueOrHash) string {
 	if value.Hash != 0 {
-		return fmt.Sprintf("hash: %d", value.Hash)
+		return fmt.Sprintf("<hash:%d>", value.Hash)
 	}
 	if value.Value == "" {
 		return "nil"

@@ -16,13 +16,25 @@ package model
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
+
+	"github.com/anishathalye/porcupine"
 )
 
+func NewReplayFromOperations(ops []porcupine.Operation) *EtcdReplay {
+	requests := []EtcdRequest{}
+	for _, op := range ops {
+		requests = append(requests, op.Input.(EtcdRequest))
+	}
+	return NewReplay(requests)
+}
+
 func NewReplay(persistedRequests []EtcdRequest) *EtcdReplay {
-	state := freshEtcdState()
-	// Padding for index 0 and 1, so index matches revision..
+	keys := keysFromRequests(persistedRequests)
+	state := freshEtcdState(keys)
+	// Padding for index 0 and 1, so the index matches the revision.
 	revisionToEtcdState := []EtcdState{state, state}
 	var events []PersistedEvent
 	for _, request := range persistedRequests {
@@ -74,7 +86,7 @@ func toWatchEvents(prevState *EtcdState, request EtcdRequest, response MaybeEtcd
 		} else {
 			ops = request.Txn.OperationsOnSuccess
 		}
-		for _, op := range ops {
+		for i, op := range ops {
 			switch op.Type {
 			case RangeOperation:
 			case DeleteOperation:
@@ -85,11 +97,11 @@ func toWatchEvents(prevState *EtcdState, request EtcdRequest, response MaybeEtcd
 					},
 					Revision: response.Revision,
 				}
-				if _, ok := prevState.KeyValues[op.Delete.Key]; ok {
+				if response.Txn.Results[i].Deleted != 0 {
 					events = append(events, e)
 				}
 			case PutOperation:
-				_, leaseExists := prevState.Leases[op.Put.LeaseID]
+				leaseExists := prevState.leaseExists(op.Put.LeaseID)
 				if op.Put.LeaseID != 0 && !leaseExists {
 					break
 				}
@@ -102,7 +114,7 @@ func toWatchEvents(prevState *EtcdState, request EtcdRequest, response MaybeEtcd
 					},
 					Revision: response.Revision,
 				}
-				if _, ok := prevState.KeyValues[op.Put.Key]; !ok {
+				if _, ok := prevState.GetValue(op.Put.Key); !ok {
 					e.IsCreate = true
 				}
 				events = append(events, e)
@@ -111,15 +123,7 @@ func toWatchEvents(prevState *EtcdState, request EtcdRequest, response MaybeEtcd
 			}
 		}
 	case LeaseRevoke:
-		deletedKeys := []string{}
-		for key := range prevState.Leases[request.LeaseRevoke.LeaseID].Keys {
-			if _, ok := prevState.KeyValues[key]; ok {
-				deletedKeys = append(deletedKeys, key)
-			}
-		}
-
-		sort.Strings(deletedKeys)
-		for _, key := range deletedKeys {
+		for _, key := range prevState.leaseKeys(request.LeaseRevoke.LeaseID) {
 			e := PersistedEvent{
 				Event: Event{
 					Type: DeleteOperation,
@@ -134,20 +138,20 @@ func toWatchEvents(prevState *EtcdState, request EtcdRequest, response MaybeEtcd
 }
 
 type WatchEvent struct {
-	PersistedEvent
-	PrevValue *ValueRevision
+	PersistedEvent `json:",omitempty"`
+	PrevValue      *ValueRevision `json:",omitempty"`
 }
 
 type PersistedEvent struct {
-	Event
-	Revision int64
-	IsCreate bool
+	Event    `json:",omitempty"`
+	Revision int64 `json:",omitempty"`
+	IsCreate bool  `json:",omitempty"`
 }
 
 type Event struct {
-	Type  OperationType
-	Key   string
-	Value ValueOrHash
+	Type  OperationType `json:",omitempty"`
+	Key   string        `json:",omitempty"`
+	Value ValueOrHash   `json:",omitempty"`
 }
 
 func (e Event) Match(request WatchRequest) bool {
@@ -163,4 +167,42 @@ type WatchRequest struct {
 	WithPrefix         bool
 	WithProgressNotify bool
 	WithPrevKV         bool
+}
+
+func ModelKeys(operations []porcupine.Operation) []string {
+	requests := []EtcdRequest{}
+	for _, op := range operations {
+		requests = append(requests, op.Input.(EtcdRequest))
+	}
+	return keysFromRequests(requests)
+}
+
+func keysFromRequests(requests []EtcdRequest) []string {
+	keysMap := map[string]bool{}
+	for _, request := range requests {
+		switch request.Type {
+		case Range:
+			keysMap[request.Range.Start] = true
+			if request.Range.End != "" {
+				keysMap[request.Range.End] = true
+			}
+		case Txn:
+			for _, op := range slices.Concat(request.Txn.OperationsOnSuccess, request.Txn.OperationsOnFailure) {
+				switch op.Type {
+				case RangeOperation:
+					keysMap[op.Range.Start] = true
+					if op.Range.End != "" {
+						keysMap[op.Range.End] = true
+					}
+				case PutOperation:
+					keysMap[op.Put.Key] = true
+				case DeleteOperation:
+					keysMap[op.Delete.Key] = true
+				}
+			}
+		}
+	}
+	keys := slices.Collect(maps.Keys(keysMap))
+	slices.Sort(keys)
+	return keys
 }

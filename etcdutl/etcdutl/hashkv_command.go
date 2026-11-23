@@ -57,10 +57,11 @@ func calculateHashKV(dbPath string, rev int64) (HashKV, error) {
 	if err := validateFilePath(dbPath); err != nil {
 		return HashKV{}, err
 	}
-	cfg := backend.DefaultBackendConfig(zap.NewNop())
-	cfg.Path = dbPath
-	b := backend.New(cfg)
-	st := mvcc.NewStore(zap.NewNop(), b, nil, mvcc.StoreConfig{})
+	b := backend.NewDefaultBackend(zap.NewNop(), dbPath, backend.WithTimeout(FlockTimeout))
+	defer b.Close()
+	// Since `etcdutl hashkv` only hashes the keyspace and ignores leases, we use a simple lessor to simplify the implementation.
+	st := mvcc.NewStore(zap.NewNop(), b, &SimpleLessor{}, mvcc.StoreConfig{})
+	defer st.Close()
 	hst := mvcc.NewHashStorage(zap.NewNop(), st)
 
 	h, _, err := hst.HashByRev(rev)

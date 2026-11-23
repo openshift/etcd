@@ -17,7 +17,6 @@
 package e2e
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -55,13 +54,12 @@ func TestForceNewCluster(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
 			epc, promotedMembers := mustCreateNewClusterByPromotingMembers(t, e2e.CurrentVersion, 5,
 				e2e.WithKeepDataDir(true), e2e.WithSnapshotCount(uint64(tc.snapcount)))
 			require.Len(t, promotedMembers, 4)
 
 			for i := 0; i < tc.snapcount; i++ {
-				err := epc.Etcdctl().Put(ctx, "foo", "bar", config.PutOptions{})
+				_, err := epc.Etcdctl().Put(t.Context(), "foo", "bar", config.PutOptions{})
 				require.NoError(t, err)
 			}
 
@@ -70,10 +68,10 @@ func TestForceNewCluster(t *testing.T) {
 			m := epc.Procs[0]
 			t.Logf("Forcibly create a one-member cluster with member: %s", m.Config().Name)
 			m.Config().Args = append(m.Config().Args, "--force-new-cluster")
-			require.NoError(t, m.Start(ctx))
+			require.NoError(t, m.Start(t.Context()))
 
 			t.Log("Restarting the member")
-			require.NoError(t, m.Restart(ctx))
+			require.NoError(t, m.Restart(t.Context()))
 
 			t.Log("Closing the member")
 			require.NoError(t, m.Close())
@@ -83,8 +81,6 @@ func TestForceNewCluster(t *testing.T) {
 
 func TestForceNewCluster_MemberCount(t *testing.T) {
 	e2e.BeforeTest(t)
-
-	ctx := context.Background()
 
 	epc, promotedMembers := mustCreateNewClusterByPromotingMembers(t, e2e.CurrentVersion, 3, e2e.WithKeepDataDir(true))
 	require.Len(t, promotedMembers, 2)
@@ -96,21 +92,21 @@ func TestForceNewCluster_MemberCount(t *testing.T) {
 
 	t.Log("Killing all the members")
 	require.NoError(t, epc.Kill())
-	require.NoError(t, epc.Wait(ctx))
+	require.NoError(t, epc.Wait(t.Context()))
 
 	m := epc.Procs[0]
 	t.Logf("Forcibly create a one-member cluster with member: %s", m.Config().Name)
 	m.Config().Args = append(m.Config().Args, "--force-new-cluster")
-	require.NoError(t, m.Start(ctx))
+	require.NoError(t, m.Start(t.Context()))
 
 	t.Log("Online checking the member count")
-	mresp, merr := m.Etcdctl().MemberList(ctx, false)
+	mresp, merr := m.Etcdctl().MemberList(t.Context(), false)
 	require.NoError(t, merr)
 	require.Len(t, mresp.Members, 1)
 
 	t.Log("Closing the member")
 	require.NoError(t, m.Close())
-	require.NoError(t, m.Wait(ctx))
+	require.NoError(t, m.Wait(t.Context()))
 
 	t.Log("Offline checking the member count")
 	members := mustReadMembersFromBoltDB(t, m.Config().DataDirPath)
@@ -157,7 +153,7 @@ func TestForceNewCluster_AddLearner_MemberCount(t *testing.T) {
 			})
 
 			for i := 0; i < tc.snapcount; i++ {
-				werr := epc.Etcdctl().Put(t.Context(), "foo", "bar", config.PutOptions{})
+				_, werr := epc.Etcdctl().Put(t.Context(), "foo", "bar", config.PutOptions{})
 				require.NoError(t, werr)
 			}
 			require.NoError(t, epc.Close())

@@ -32,43 +32,46 @@ import (
 
 var (
 	EtcdPutDeleteLease Traffic = etcdTraffic{
-		keyCount:     10,
-		leaseTTL:     DefaultLeaseTTL,
-		largePutSize: 32769,
+		keyCount: 10,
+		leaseTTL: DefaultLeaseTTL,
 		// Please keep the sum of weights equal 100.
 		requests: []random.ChoiceWeight[etcdRequestType]{
 			{Choice: Get, Weight: 15},
-			{Choice: List, Weight: 15},
+			{Choice: List, Weight: 4},
+			{Choice: ListKeyOnly, Weight: 4},
+			{Choice: ListStream, Weight: 4},
+			{Choice: ListStreamKeyOnly, Weight: 3},
 			{Choice: StaleGet, Weight: 10},
-			{Choice: StaleList, Weight: 10},
+			{Choice: StaleList, Weight: 5},
+			{Choice: StaleListStream, Weight: 5},
 			{Choice: Delete, Weight: 5},
-			{Choice: MultiOpTxn, Weight: 5},
+			{Choice: MultiOpTxn, Weight: 10},
 			{Choice: PutWithLease, Weight: 5},
 			{Choice: LeaseRevoke, Weight: 5},
 			{Choice: CompareAndSet, Weight: 5},
 			{Choice: Put, Weight: 20},
-			{Choice: LargePut, Weight: 5},
 		},
 	}
 	EtcdPut Traffic = etcdTraffic{
-		keyCount:     10,
-		largePutSize: 32769,
-		leaseTTL:     DefaultLeaseTTL,
+		keyCount: 10,
+		leaseTTL: DefaultLeaseTTL,
 		// Please keep the sum of weights equal 100.
 		requests: []random.ChoiceWeight[etcdRequestType]{
 			{Choice: Get, Weight: 15},
-			{Choice: List, Weight: 15},
+			{Choice: List, Weight: 4},
+			{Choice: ListKeyOnly, Weight: 4},
+			{Choice: ListStream, Weight: 4},
+			{Choice: ListStreamKeyOnly, Weight: 3},
 			{Choice: StaleGet, Weight: 10},
-			{Choice: StaleList, Weight: 10},
-			{Choice: MultiOpTxn, Weight: 5},
-			{Choice: LargePut, Weight: 5},
+			{Choice: StaleList, Weight: 5},
+			{Choice: StaleListStream, Weight: 5},
+			{Choice: MultiOpTxn, Weight: 10},
 			{Choice: Put, Weight: 40},
 		},
 	}
 	EtcdDelete Traffic = etcdTraffic{
-		keyCount:     10,
-		largePutSize: 32769,
-		leaseTTL:     DefaultLeaseTTL,
+		keyCount: 10,
+		leaseTTL: DefaultLeaseTTL,
 		// Please keep the sum of weights equal 100.
 		requests: []random.ChoiceWeight[etcdRequestType]{
 			{Choice: Put, Weight: 50},
@@ -78,10 +81,9 @@ var (
 )
 
 type etcdTraffic struct {
-	keyCount     int
-	requests     []random.ChoiceWeight[etcdRequestType]
-	leaseTTL     int64
-	largePutSize int
+	keyCount int
+	requests []random.ChoiceWeight[etcdRequestType]
+	leaseTTL int64
 }
 
 func (t etcdTraffic) ExpectUniqueRevision() bool {
@@ -91,41 +93,44 @@ func (t etcdTraffic) ExpectUniqueRevision() bool {
 type etcdRequestType string
 
 const (
-	Get           etcdRequestType = "get"
-	StaleGet      etcdRequestType = "staleGet"
-	List          etcdRequestType = "list"
-	StaleList     etcdRequestType = "staleList"
-	Put           etcdRequestType = "put"
-	LargePut      etcdRequestType = "largePut"
-	Delete        etcdRequestType = "delete"
-	MultiOpTxn    etcdRequestType = "multiOpTxn"
-	PutWithLease  etcdRequestType = "putWithLease"
-	LeaseRevoke   etcdRequestType = "leaseRevoke"
-	CompareAndSet etcdRequestType = "compareAndSet"
-	Defragment    etcdRequestType = "defragment"
+	Get               etcdRequestType = "get"
+	StaleGet          etcdRequestType = "staleGet"
+	List              etcdRequestType = "list"
+	ListKeyOnly       etcdRequestType = "listKeyOnly"
+	StaleList         etcdRequestType = "staleList"
+	ListStream        etcdRequestType = "listStream"
+	ListStreamKeyOnly etcdRequestType = "listStreamKeyOnly"
+	StaleListStream   etcdRequestType = "staleListStream"
+	Put               etcdRequestType = "put"
+	Delete            etcdRequestType = "delete"
+	MultiOpTxn        etcdRequestType = "multiOpTxn"
+	PutWithLease      etcdRequestType = "putWithLease"
+	LeaseRevoke       etcdRequestType = "leaseRevoke"
+	CompareAndSet     etcdRequestType = "compareAndSet"
+	Defragment        etcdRequestType = "defragment"
 )
 
 func (t etcdTraffic) Name() string {
 	return "Etcd"
 }
 
-func (t etcdTraffic) RunTrafficLoop(ctx context.Context, c *client.RecordingClient, limiter *rate.Limiter, ids identity.Provider, lm identity.LeaseIDStorage, nonUniqueWriteLimiter ConcurrencyLimiter, finish <-chan struct{}) {
+func (t etcdTraffic) RunKeyValueLoop(ctx context.Context, c *client.RecordingClient, p RunTrafficLoopParam) {
 	lastOperationSucceeded := true
 	var lastRev int64
 	var requestType etcdRequestType
 	client := etcdTrafficClient{
 		etcdTraffic:  t,
-		keyPrefix:    "key",
+		keyStore:     p.KeyStore,
 		client:       c,
-		limiter:      limiter,
-		idProvider:   ids,
-		leaseStorage: lm,
+		limiter:      p.QPSLimiter,
+		idProvider:   p.IDs,
+		leaseStorage: p.LeaseIDStorage,
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-finish:
+		case <-p.Finish:
 			return
 		default:
 		}
@@ -134,16 +139,16 @@ func (t etcdTraffic) RunTrafficLoop(ctx context.Context, c *client.RecordingClie
 		// Avoid multiple failed writes in a row
 		if lastOperationSucceeded {
 			choices := t.requests
-			if shouldReturn = nonUniqueWriteLimiter.Take(); !shouldReturn {
+			if shouldReturn = p.NonUniqueRequestConcurrencyLimiter.Take(); !shouldReturn {
 				choices = filterOutNonUniqueEtcdWrites(choices)
 			}
 			requestType = random.PickRandom(choices)
 		} else {
-			requestType = Get
+			requestType = List
 		}
 		rev, err := client.Request(ctx, requestType, lastRev)
 		if shouldReturn {
-			nonUniqueWriteLimiter.Return()
+			p.NonUniqueRequestConcurrencyLimiter.Return()
 		}
 		lastOperationSucceeded = err == nil
 		if err != nil {
@@ -152,19 +157,25 @@ func (t etcdTraffic) RunTrafficLoop(ctx context.Context, c *client.RecordingClie
 		if rev != 0 {
 			lastRev = rev
 		}
-		limiter.Wait(ctx)
+		p.QPSLimiter.Wait(ctx)
 	}
 }
 
-func (t etcdTraffic) RunCompactLoop(ctx context.Context, c *client.RecordingClient, period time.Duration, finish <-chan struct{}) {
+func (t etcdTraffic) RunWatchLoop(ctx context.Context, c *client.RecordingClient, p RunWatchLoopParam) {
+	runWatchLoop(ctx, c, p, watchLoopConfig{
+		key: p.KeyStore.GetPrefix(),
+	})
+}
+
+func (t etcdTraffic) RunCompactLoop(ctx context.Context, c *client.RecordingClient, param RunCompactLoopParam) {
 	var lastRev int64 = 2
-	ticker := time.NewTicker(period)
+	ticker := time.NewTicker(param.Period)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-finish:
+		case <-param.Finish:
 			return
 		case <-ticker.C:
 		}
@@ -196,7 +207,7 @@ func filterOutNonUniqueEtcdWrites(choices []random.ChoiceWeight[etcdRequestType]
 
 type etcdTrafficClient struct {
 	etcdTraffic
-	keyPrefix    string
+	keyStore     *keyStore
 	client       *client.RecordingClient
 	limiter      *rate.Limiter
 	idProvider   identity.Provider
@@ -211,57 +222,79 @@ func (c etcdTrafficClient) Request(ctx context.Context, request etcdRequestType,
 	switch request {
 	case StaleGet:
 		var resp *clientv3.GetResponse
-		resp, err = c.client.Get(opCtx, c.randomKey(), clientv3.WithRev(lastRev))
+		resp, err = c.client.Get(opCtx, c.keyStore.GetKey(), clientv3.WithRev(lastRev))
 		if err == nil {
 			rev = resp.Header.Revision
 		}
 	case Get:
 		var resp *clientv3.GetResponse
-		resp, err = c.client.Get(opCtx, c.randomKey(), clientv3.WithRev(0))
+		resp, err = c.client.Get(opCtx, c.keyStore.GetKey(), clientv3.WithRev(0))
 		if err == nil {
 			rev = resp.Header.Revision
 		}
 	case List:
 		var resp *clientv3.GetResponse
-		resp, err = c.client.Range(ctx, c.keyPrefix, clientv3.GetPrefixRangeEnd(c.keyPrefix), 0, limit)
+		resp, err = c.client.Range(opCtx, c.keyStore.GetPrefix(), clientv3.GetPrefixRangeEnd(c.keyStore.GetPrefix()), 0, limit, false)
 		if resp != nil {
+			c.keyStore.SyncKeys(resp)
+			rev = resp.Header.Revision
+		}
+	case ListKeyOnly:
+		var resp *clientv3.GetResponse
+		resp, err = c.client.Range(opCtx, c.keyStore.GetPrefix(), clientv3.GetPrefixRangeEnd(c.keyStore.GetPrefix()), 0, limit, true)
+		if resp != nil {
+			c.keyStore.SyncKeys(resp)
 			rev = resp.Header.Revision
 		}
 	case StaleList:
 		var resp *clientv3.GetResponse
-		resp, err = c.client.Range(ctx, c.keyPrefix, clientv3.GetPrefixRangeEnd(c.keyPrefix), lastRev, limit)
+		resp, err = c.client.Range(opCtx, c.keyStore.GetPrefix(), clientv3.GetPrefixRangeEnd(c.keyStore.GetPrefix()), lastRev, limit, false)
+		if resp != nil {
+			rev = resp.Header.Revision
+		}
+	case ListStream:
+		var resp *clientv3.GetResponse
+		resp, err = c.client.RangeStream(opCtx, c.keyStore.GetPrefix(), clientv3.GetPrefixRangeEnd(c.keyStore.GetPrefix()), 0, limit, false)
+		if resp != nil {
+			c.keyStore.SyncKeys(resp)
+			rev = resp.Header.Revision
+		}
+	case ListStreamKeyOnly:
+		var resp *clientv3.GetResponse
+		resp, err = c.client.RangeStream(opCtx, c.keyStore.GetPrefix(), clientv3.GetPrefixRangeEnd(c.keyStore.GetPrefix()), 0, limit, true)
+		if resp != nil {
+			c.keyStore.SyncKeys(resp)
+			rev = resp.Header.Revision
+		}
+	case StaleListStream:
+		var resp *clientv3.GetResponse
+		resp, err = c.client.RangeStream(opCtx, c.keyStore.GetPrefix(), clientv3.GetPrefixRangeEnd(c.keyStore.GetPrefix()), lastRev, limit, false)
 		if resp != nil {
 			rev = resp.Header.Revision
 		}
 	case Put:
 		var resp *clientv3.PutResponse
-		resp, err = c.client.Put(opCtx, c.randomKey(), fmt.Sprintf("%d", c.idProvider.NewRequestID()))
-		if resp != nil {
-			rev = resp.Header.Revision
-		}
-	case LargePut:
-		var resp *clientv3.PutResponse
-		resp, err = c.client.Put(opCtx, c.randomKey(), random.RandString(c.largePutSize))
+		resp, err = c.client.Put(opCtx, c.keyStore.GetKey(), fmt.Sprintf("%d", c.idProvider.NewRequestID()))
 		if resp != nil {
 			rev = resp.Header.Revision
 		}
 	case Delete:
 		var resp *clientv3.DeleteResponse
-		resp, err = c.client.Delete(opCtx, c.randomKey())
+		resp, err = c.client.Delete(opCtx, c.keyStore.GetKeyForDelete())
 		if resp != nil {
 			rev = resp.Header.Revision
 		}
 	case MultiOpTxn:
 		var resp *clientv3.TxnResponse
 		resp, err = c.client.Txn(opCtx).Then(
-			c.pickMultiTxnOps()...,
+			c.pickMultiTxnOps(c.keyStore)...,
 		).Commit()
 		if resp != nil {
 			rev = resp.Header.Revision
 		}
 	case CompareAndSet:
 		var kv *mvccpb.KeyValue
-		key := c.randomKey()
+		key := c.keyStore.GetKey()
 		var resp *clientv3.GetResponse
 		resp, err = c.client.Get(opCtx, key, clientv3.WithRev(0))
 		if err == nil {
@@ -303,7 +336,7 @@ func (c etcdTrafficClient) Request(ctx context.Context, request etcdRequestType,
 		if leaseID != 0 {
 			putCtx, putCancel := context.WithTimeout(ctx, RequestTimeout)
 			var resp *clientv3.PutResponse
-			resp, err = c.client.PutWithLease(putCtx, c.randomKey(), fmt.Sprintf("%d", c.idProvider.NewRequestID()), leaseID)
+			resp, err = c.client.PutWithLease(putCtx, c.keyStore.GetKey(), fmt.Sprintf("%d", c.idProvider.NewRequestID()), leaseID)
 			putCancel()
 			if resp != nil {
 				rev = resp.Header.Revision
@@ -334,8 +367,7 @@ func (c etcdTrafficClient) Request(ctx context.Context, request etcdRequestType,
 	return rev, err
 }
 
-func (c etcdTrafficClient) pickMultiTxnOps() (ops []clientv3.Op) {
-	keys := rand.Perm(c.keyCount)
+func (c etcdTrafficClient) pickMultiTxnOps(keyStore *keyStore) (ops []clientv3.Op) {
 	opTypes := make([]model.OperationType, 4)
 
 	atLeastOnePut := false
@@ -350,8 +382,10 @@ func (c etcdTrafficClient) pickMultiTxnOps() (ops []clientv3.Op) {
 		opTypes[0] = model.PutOperation
 	}
 
+	keys := keyStore.GetKeysForMultiTxnOps(opTypes)
+
 	for i, opType := range opTypes {
-		key := c.key(keys[i])
+		key := keys[i]
 		switch opType {
 		case model.RangeOperation:
 			ops = append(ops, clientv3.OpGet(key))
@@ -361,18 +395,10 @@ func (c etcdTrafficClient) pickMultiTxnOps() (ops []clientv3.Op) {
 		case model.DeleteOperation:
 			ops = append(ops, clientv3.OpDelete(key))
 		default:
-			panic("unsuported choice type")
+			panic("unsupported choice type")
 		}
 	}
 	return ops
-}
-
-func (c etcdTrafficClient) randomKey() string {
-	return c.key(rand.Int())
-}
-
-func (c etcdTrafficClient) key(i int) string {
-	return fmt.Sprintf("%s%d", c.keyPrefix, i%c.keyCount)
 }
 
 func (t etcdTraffic) pickOperationType() model.OperationType {

@@ -29,15 +29,13 @@ import (
 	"path/filepath"
 	"time"
 
-	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
-	grpc_ctxtags "github.com/grpc-ecosystem/go-grpc-middleware/tags"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/soheilhy/cmux"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapgrpc"
-	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
 	"google.golang.org/grpc/keepalive"
@@ -397,9 +395,6 @@ func newProxyClientCfg(lg *zap.Logger, eps []string, tls *transport.TLSInfo) (*c
 		Endpoints:   eps,
 		DialTimeout: 5 * time.Second,
 		Logger:      lg,
-		DialOptions: []grpc.DialOption{
-			grpc.WithBlock(), //nolint:staticcheck // TODO: remove for a supported version
-		},
 	}
 	if tls != nil {
 		clientTLS, err := tls.ClientConfig()
@@ -519,8 +514,6 @@ func newGRPCProxyServer(lg *zap.Logger, client *clientv3.Client) *grpc.Server {
 	electionp := grpcproxy.NewElectionProxy(client)
 	lockp := grpcproxy.NewLockProxy(client)
 
-	alwaysLoggingDeciderServer := func(ctx context.Context, fullMethodName string, servingObject any) bool { return true }
-
 	serverMetrics := grpc_prometheus.NewServerMetrics()
 	prometheus.MustRegister(serverMetrics)
 
@@ -532,12 +525,10 @@ func newGRPCProxyServer(lg *zap.Logger, client *clientv3.Client) *grpc.Server {
 	}
 	if grpcProxyEnableLogging {
 		grpcChainStreamList = append(grpcChainStreamList,
-			grpc_ctxtags.StreamServerInterceptor(),
-			grpc_zap.PayloadStreamServerInterceptor(lg, alwaysLoggingDeciderServer),
+			interceptors.StreamServerInterceptor(reportable(lg)),
 		)
 		grpcChainUnaryList = append(grpcChainUnaryList,
-			grpc_ctxtags.UnaryServerInterceptor(),
-			grpc_zap.PayloadUnaryServerInterceptor(lg, alwaysLoggingDeciderServer),
+			interceptors.UnaryServerInterceptor(reportable(lg)),
 		)
 	}
 
@@ -598,10 +589,12 @@ func mustHTTPServer(lg *zap.Logger, tlsinfo *transport.TLSInfo, httpClient *http
 		Handler:  httpmux,
 		ErrorLog: log.New(io.Discard, "net/http", 0),
 	}
-	if err := http2.ConfigureServer(srvhttp, &http2.Server{
-		MaxConcurrentStreams: maxConcurrentStreams,
-	}); err != nil {
-		lg.Fatal("Failed to configure the http server", zap.Error(err))
+
+	// net/http replaces any MaxConcurrentStreams above math.MaxInt32 with its
+	// default (250), so clamp the uint32 value (default math.MaxUint32) to keep
+	// it effectively unlimited.
+	srvhttp.HTTP2 = &http.HTTP2Config{
+		MaxConcurrentStreams: int(min(maxConcurrentStreams, math.MaxInt32)),
 	}
 
 	if tlsinfo == nil {

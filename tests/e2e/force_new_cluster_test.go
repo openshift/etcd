@@ -17,8 +17,10 @@
 package e2e
 
 import (
-	"context"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -55,13 +57,12 @@ func TestForceNewCluster(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
 			epc, promotedMembers := mustCreateNewClusterByPromotingMembers(t, e2e.CurrentVersion, 5,
 				e2e.WithKeepDataDir(true), e2e.WithSnapshotCount(uint64(tc.snapcount)))
 			require.Len(t, promotedMembers, 4)
 
 			for i := 0; i < tc.snapcount; i++ {
-				err := epc.Etcdctl().Put(ctx, "foo", "bar", config.PutOptions{})
+				_, err := epc.Etcdctl().Put(t.Context(), "foo", "bar", config.PutOptions{})
 				require.NoError(t, err)
 			}
 
@@ -70,10 +71,10 @@ func TestForceNewCluster(t *testing.T) {
 			m := epc.Procs[0]
 			t.Logf("Forcibly create a one-member cluster with member: %s", m.Config().Name)
 			m.Config().Args = append(m.Config().Args, "--force-new-cluster")
-			require.NoError(t, m.Start(ctx))
+			require.NoError(t, m.Start(t.Context()))
 
 			t.Log("Restarting the member")
-			require.NoError(t, m.Restart(ctx))
+			require.NoError(t, m.Restart(t.Context()))
 
 			t.Log("Closing the member")
 			require.NoError(t, m.Close())
@@ -83,8 +84,6 @@ func TestForceNewCluster(t *testing.T) {
 
 func TestForceNewCluster_MemberCount(t *testing.T) {
 	e2e.BeforeTest(t)
-
-	ctx := context.Background()
 
 	epc, promotedMembers := mustCreateNewClusterByPromotingMembers(t, e2e.CurrentVersion, 3, e2e.WithKeepDataDir(true))
 	require.Len(t, promotedMembers, 2)
@@ -96,21 +95,21 @@ func TestForceNewCluster_MemberCount(t *testing.T) {
 
 	t.Log("Killing all the members")
 	require.NoError(t, epc.Kill())
-	require.NoError(t, epc.Wait(ctx))
+	require.NoError(t, epc.Wait(t.Context()))
 
 	m := epc.Procs[0]
 	t.Logf("Forcibly create a one-member cluster with member: %s", m.Config().Name)
 	m.Config().Args = append(m.Config().Args, "--force-new-cluster")
-	require.NoError(t, m.Start(ctx))
+	require.NoError(t, m.Start(t.Context()))
 
 	t.Log("Online checking the member count")
-	mresp, merr := m.Etcdctl().MemberList(ctx, false)
+	mresp, merr := m.Etcdctl().MemberList(t.Context(), false)
 	require.NoError(t, merr)
 	require.Len(t, mresp.Members, 1)
 
 	t.Log("Closing the member")
 	require.NoError(t, m.Close())
-	require.NoError(t, m.Wait(ctx))
+	require.NoError(t, m.Wait(t.Context()))
 
 	t.Log("Offline checking the member count")
 	members := mustReadMembersFromBoltDB(t, m.Config().DataDirPath)
@@ -157,7 +156,7 @@ func TestForceNewCluster_AddLearner_MemberCount(t *testing.T) {
 			})
 
 			for i := 0; i < tc.snapcount; i++ {
-				werr := epc.Etcdctl().Put(t.Context(), "foo", "bar", config.PutOptions{})
+				_, werr := epc.Etcdctl().Put(t.Context(), "foo", "bar", config.PutOptions{})
 				require.NoError(t, werr)
 			}
 			require.NoError(t, epc.Close())
@@ -204,4 +203,63 @@ func mustReadMembersFromBoltDB(t *testing.T, dataDir string) []*membership.Membe
 	})
 
 	return members
+}
+
+// TestForceNewCluster_BackendConsistentIndexAheadOfWAL ensures that
+// --force-new-cluster fails cleanly when the backend consistent index is
+// ahead of the last entry in the WAL.
+func TestForceNewCluster_BackendConsistentIndexAheadOfWAL(t *testing.T) {
+	e2e.BeforeTest(t)
+
+	epc, err := e2e.NewEtcdProcessCluster(t.Context(), t,
+		e2e.WithConfig(e2e.NewConfig(e2e.WithClusterSize(3))),
+		e2e.WithKeepDataDir(true),
+	)
+	require.NoError(t, err)
+
+	t.Log("Writing some keys")
+	for i := 0; i < 5; i++ {
+		_, err = epc.Etcdctl().Put(t.Context(), fmt.Sprintf("key-%d", i), "value", config.PutOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, epc.Close())
+
+	victim := epc.Procs[0]
+	t.Log("Simulating a crash where the backend consistent index advanced past the last entry written to the WAL")
+	bumpBackendConsistentIndex(t, victim.Config().DataDirPath, 5)
+
+	t.Logf("Forcibly create a one-member cluster with member: %s", victim.Config().Name)
+	victim.Config().Args = append(victim.Config().Args, "--force-new-cluster")
+
+	t.Log("The bootstrap must fail cleanly with an error instead of panicking")
+	require.Error(t, victim.Start(t.Context()))
+
+	t.Log("Checking the failure is intentional and explained in the member log")
+	require.Contains(t, strings.Join(victim.Logs().Lines(), "\n"), "adjusted commit index is ahead of the last WAL entry")
+}
+
+// bumpBackendConsistentIndex advances the consistent index persisted in the
+// member's backend by delta, without writing the corresponding entries to
+// the WAL.
+func bumpBackendConsistentIndex(t *testing.T, dataDir string, delta uint64) {
+	dbPath := datadir.ToBackendFileName(dataDir)
+	db, err := bbolt.Open(dbPath, 0o600, nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+	require.NoError(t, db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(schema.Meta.Name())
+		if b == nil {
+			return errors.New("meta bucket not found")
+		}
+		key := schema.MetaConsistentIndexKeyName
+		v := b.Get(key)
+		if len(v) != 8 {
+			return fmt.Errorf("unexpected consistent_index value length: %d", len(v))
+		}
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, binary.BigEndian.Uint64(v)+delta)
+		return b.Put(key, buf)
+	}))
 }

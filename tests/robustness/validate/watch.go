@@ -16,9 +16,11 @@ package validate
 
 import (
 	"errors"
+	"fmt"
+	"reflect"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.uber.org/zap"
 
 	"go.etcd.io/etcd/tests/v3/robustness/model"
@@ -26,7 +28,7 @@ import (
 )
 
 var (
-	errBrokeBookmarkable = errors.New("broke Bookmarkable - Progress notification events guarantee that all events up to a revision have been already delivered")
+	errBrokeBookmarkable = errors.New("broke Bookmarkable - Progress notification events guarantee that all events up to a revision have already been delivered")
 	errBrokeOrdered      = errors.New("broke Ordered - events are ordered by revision; an event will never appear on a watch if it precedes an event in time that has already been posted")
 	errBrokeUnique       = errors.New("broke Unique - an event will never appear on a watch twice")
 	errBrokeAtomic       = errors.New("broke Atomic - a list of events is guaranteed to encompass complete revisions; updates in the same revision over multiple keys will not be split over several lists of events")
@@ -37,8 +39,19 @@ var (
 	errBrokeFilter       = errors.New("event not matching watch filter")
 )
 
-func validateWatch(lg *zap.Logger, cfg Config, reports []report.ClientReport, replay *model.EtcdReplay) error {
+func validateWatch(lg *zap.Logger, cfg Config, reports []report.ClientReport, replay *model.EtcdReplay) Result {
 	lg.Info("Validating watch")
+	start := time.Now()
+	err := validateWatchError(lg, cfg, reports, replay)
+	if err != nil {
+		lg.Error("Watch validation failed", zap.Duration("duration", time.Since(start)), zap.Error(err))
+	} else {
+		lg.Info("Watch validation success", zap.Duration("duration", time.Since(start)))
+	}
+	return ResultFromError(err)
+}
+
+func validateWatchError(lg *zap.Logger, cfg Config, reports []report.ClientReport, replay *model.EtcdReplay) error {
 	// Validate etcd watch properties defined in https://etcd.io/docs/v3.6/learning/api_guarantees/#watch-apis
 	for _, r := range reports {
 		err := validateFilter(lg, r)
@@ -65,15 +78,15 @@ func validateWatch(lg *zap.Logger, cfg Config, reports []report.ClientReport, re
 		if err != nil {
 			return err
 		}
+		err = validateIsCreate(lg, replay, r)
+		if err != nil {
+			return err
+		}
 		err = validateReliable(lg, replay, r)
 		if err != nil {
 			return err
 		}
 		err = validatePrevKV(lg, replay, r)
-		if err != nil {
-			return err
-		}
-		err = validateIsCreate(lg, replay, r)
 		if err != nil {
 			return err
 		}
@@ -205,8 +218,10 @@ func validateReliable(lg *zap.Logger, replay *model.EtcdReplay, report report.Cl
 				gotEvents = append(gotEvents, event.PersistedEvent)
 			}
 		}
-		if diff := cmp.Diff(wantEvents, gotEvents, cmpopts.IgnoreFields(model.PersistedEvent{}, "IsCreate")); diff != "" {
-			lg.Error("Broke watch guarantee", zap.String("guarantee", "reliable"), zap.Int("client", report.ClientID), zap.String("diff", diff))
+		if !reflect.DeepEqual(wantEvents, gotEvents) {
+			lg.Error("Broke watch guarantee", zap.String("guarantee", "reliable"), zap.Int("client", report.ClientID))
+			// Directly print to console to avoid escaping newline.
+			fmt.Print(cmp.Diff(wantEvents, gotEvents))
 			err = errBrokeReliable
 		}
 	}
@@ -245,7 +260,7 @@ func validatePrevKV(lg *zap.Logger, replay *model.EtcdReplay, report report.Clie
 		}
 		for _, resp := range op.Responses {
 			for _, event := range resp.Events {
-				// Get state state just before the current event.
+				// Get state just before the current event.
 				state, err2 := replay.StateForRevision(event.Revision - 1)
 				if err2 != nil {
 					panic(err2)
@@ -263,9 +278,15 @@ func validatePrevKV(lg *zap.Logger, replay *model.EtcdReplay, report report.Clie
 
 				// We allow PrevValue to be nil since in the face of compaction, etcd does not
 				// guarantee its presence.
-				if event.PrevValue != nil && *event.PrevValue != state.KeyValues[event.Key] {
-					lg.Error("Incorrect event prevValue field", zap.Int("client", report.ClientID), zap.Any("event", event), zap.Any("previousValue", state.KeyValues[event.Key]))
-					err = errBrokePrevKV
+				if event.PrevValue != nil {
+					val, ok := state.GetValue(event.Key)
+					if !ok {
+						lg.Error("Incorrect event prevValue field", zap.Int("client", report.ClientID), zap.Any("event", event), zap.Any("previousValue", nil))
+						err = errBrokePrevKV
+					} else if *event.PrevValue != *val {
+						lg.Error("Incorrect event prevValue field", zap.Int("client", report.ClientID), zap.Any("event", event), zap.Any("previousValue", *val))
+						err = errBrokePrevKV
+					}
 				}
 			}
 		}
@@ -277,14 +298,14 @@ func validateIsCreate(lg *zap.Logger, replay *model.EtcdReplay, report report.Cl
 	for _, op := range report.Watch {
 		for _, resp := range op.Responses {
 			for _, event := range resp.Events {
-				// Get state state just before the current event.
+				// Get state just before the current event.
 				state, err2 := replay.StateForRevision(event.Revision - 1)
 				if err2 != nil {
 					panic(err2)
 				}
 				// A create event will not have an entry in our history and a non-create
 				// event *should* have an entry in our history.
-				if _, prevKeyExists := state.KeyValues[event.Key]; event.IsCreate == prevKeyExists {
+				if _, prevKeyExists := state.GetValue(event.Key); event.IsCreate == prevKeyExists {
 					lg.Error("Incorrect event IsCreate field", zap.Int("client", report.ClientID), zap.Any("event", event))
 					err = errBrokeIsCreate
 				}

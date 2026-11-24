@@ -17,35 +17,33 @@
 package clientv3test
 
 import (
-	"context"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/mirror"
-	integration2 "go.etcd.io/etcd/tests/v3/framework/integration"
+	"go.etcd.io/etcd/tests/v3/framework/integration"
 )
 
 func TestMirrorSync_Authenticated(t *testing.T) {
-	integration2.BeforeTest(t)
-	clus := integration2.NewCluster(t, &integration2.ClusterConfig{Size: 1})
+	integration.BeforeTest(t)
+	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 1})
 	defer clus.Terminate(t)
 
 	initialClient := clus.Client(0)
 
 	// Create a user to run the mirror process that only has access to /syncpath
-	initialClient.RoleAdd(context.Background(), "syncer")
-	initialClient.RoleGrantPermission(context.Background(), "syncer", "/syncpath", clientv3.GetPrefixRangeEnd("/syncpath"), clientv3.PermissionType(clientv3.PermReadWrite))
-	initialClient.UserAdd(context.Background(), "syncer", "syncfoo")
-	initialClient.UserGrantRole(context.Background(), "syncer", "syncer")
+	initialClient.RoleAdd(t.Context(), "syncer")
+	initialClient.RoleGrantPermission(t.Context(), "syncer", "/syncpath", clientv3.GetPrefixRangeEnd("/syncpath"), clientv3.PermissionType(clientv3.PermReadWrite))
+	initialClient.UserAdd(t.Context(), "syncer", "syncfoo")
+	initialClient.UserGrantRole(t.Context(), "syncer", "syncer")
 
 	// Seed /syncpath with some initial data
-	_, err := initialClient.KV.Put(context.TODO(), "/syncpath/foo", "bar")
+	_, err := initialClient.KV.Put(t.Context(), "/syncpath/foo", "bar")
 	require.NoError(t, err)
 
 	// Require authentication
@@ -55,17 +53,16 @@ func TestMirrorSync_Authenticated(t *testing.T) {
 	cfg := clientv3.Config{
 		Endpoints:   initialClient.Endpoints(),
 		DialTimeout: 5 * time.Second,
-		DialOptions: []grpc.DialOption{grpc.WithBlock()},
 		Username:    "syncer",
 		Password:    "syncfoo",
 	}
-	syncClient, err := integration2.NewClient(t, cfg)
+	syncClient, err := integration.NewClient(t, cfg)
 	require.NoError(t, err)
 	defer syncClient.Close()
 
 	// Now run the sync process, create changes, and get the initial sync state
 	syncer := mirror.NewSyncer(syncClient, "/syncpath", 0)
-	gch, ech := syncer.SyncBase(context.TODO())
+	gch, ech := syncer.SyncBase(t.Context())
 	wkvs := []*mvccpb.KeyValue{{Key: []byte("/syncpath/foo"), Value: []byte("bar"), CreateRevision: 2, ModRevision: 2, Version: 1}}
 
 	for g := range gch {
@@ -79,10 +76,10 @@ func TestMirrorSync_Authenticated(t *testing.T) {
 	}
 
 	// Start a continuous sync
-	wch := syncer.SyncUpdates(context.TODO())
+	wch := syncer.SyncUpdates(t.Context())
 
 	// Update state
-	_, err = syncClient.KV.Put(context.TODO(), "/syncpath/foo", "baz")
+	_, err = syncClient.KV.Put(t.Context(), "/syncpath/foo", "baz")
 	require.NoError(t, err)
 
 	// Wait for the updated state to sync

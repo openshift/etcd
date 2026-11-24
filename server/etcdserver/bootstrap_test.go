@@ -34,10 +34,11 @@ import (
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/api/v3/version"
 	"go.etcd.io/etcd/client/pkg/v3/types"
+	"go.etcd.io/etcd/pkg/v3/pbutil"
 	"go.etcd.io/etcd/server/v3/config"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/membership"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/v2store"
+	"go.etcd.io/etcd/server/v3/etcdserver/cindex"
 	serverstorage "go.etcd.io/etcd/server/v3/storage"
 	"go.etcd.io/etcd/server/v3/storage/datadir"
 	"go.etcd.io/etcd/server/v3/storage/schema"
@@ -133,7 +134,7 @@ func mockBootstrapRoundTrip(members []etcdserverpb.Member) roundTripFunc {
 		case strings.Contains(r.URL.String(), DowngradeEnabledPath):
 			return &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader(`true`)),
+				Body:       io.NopCloser(strings.NewReader(`false`)),
 			}, nil
 		}
 		return nil, nil
@@ -191,9 +192,7 @@ func TestBootstrapBackend(t *testing.T) {
 			}
 
 			haveWAL := wal.Exist(cfg.WALDir())
-			st := v2store.New(StoreClusterPrefix, StoreKeysPrefix)
-			ss := snap.New(cfg.Logger, cfg.SnapDir())
-			backend, err := bootstrapBackend(cfg, haveWAL, st, ss)
+			backend, err := bootstrapBackend(cfg, haveWAL)
 			defer t.Cleanup(func() {
 				backend.Close()
 			})
@@ -256,19 +255,19 @@ func createWALFileWithSnapshotRecord(cfg config.ServerConfig, snapshotTerm, snap
 	}()
 
 	walSnap := walpb.Snapshot{
-		Index: snapshotIndex,
-		Term:  snapshotTerm,
+		Index: &snapshotIndex,
+		Term:  &snapshotTerm,
 		ConfState: &raftpb.ConfState{
 			Voters:    []uint64{0x00ffca74},
-			AutoLeave: false,
+			AutoLeave: new(false),
 		},
 	}
 
-	if err = w.SaveSnapshot(walSnap); err != nil {
+	if err = w.SaveSnapshot(&walSnap); err != nil {
 		return err
 	}
 
-	return w.Save(raftpb.HardState{Term: snapshotTerm, Vote: 3, Commit: snapshotIndex}, nil)
+	return w.Save(&raftpb.HardState{Term: &snapshotTerm, Vote: new(uint64(3)), Commit: &snapshotIndex}, nil)
 }
 
 func createSnapshotAndBackendDB(cfg config.ServerConfig, snapshotTerm, snapshotIndex uint64) error {
@@ -280,12 +279,12 @@ func createSnapshotAndBackendDB(cfg config.ServerConfig, snapshotTerm, snapshotI
 
 	// create snapshot file
 	ss := snap.New(cfg.Logger, cfg.SnapDir())
-	if err = ss.SaveSnap(raftpb.Snapshot{
+	if err = ss.SaveSnap(&raftpb.Snapshot{
 		Data: []byte("{}"),
-		Metadata: raftpb.SnapshotMetadata{
-			ConfState: confState,
-			Index:     snapshotIndex,
-			Term:      snapshotTerm,
+		Metadata: &raftpb.SnapshotMetadata{
+			ConfState: &confState,
+			Index:     &snapshotIndex,
+			Term:      &snapshotTerm,
 		},
 	}); err != nil {
 		return err
@@ -309,4 +308,67 @@ func createSnapshotAndBackendDB(cfg config.ServerConfig, snapshotTerm, snapshotI
 	schema.CreateMetaBucket(be.BatchTx())
 	schema.UnsafeUpdateConsistentIndex(be.BatchTx(), 1, 1)
 	return be.Close()
+}
+
+func TestBootstrapWALFromSnapshotBackendAheadOfWAL(t *testing.T) {
+	dataDir, err := createDataDir(t)
+	require.NoError(t, err)
+
+	cfg := config.ServerConfig{
+		Logger:          zaptest.NewLogger(t),
+		DataDir:         dataDir,
+		ForceNewCluster: true,
+	}
+
+	var ents []*raftpb.Entry
+	for idx := uint64(28); idx <= 31; idx++ {
+		ents = append(ents, &raftpb.Entry{
+			Type:  raftpb.EntryNormal.Enum(),
+			Data:  []byte("foo"),
+			Term:  new(uint64(2)),
+			Index: new(idx),
+		})
+	}
+
+	metadata := pbutil.MustMarshalMessage(
+		&etcdserverpb.Metadata{
+			NodeID:    new(uint64(1)),
+			ClusterID: new(uint64(1)),
+		},
+	)
+	w, err := wal.Create(cfg.Logger, cfg.WALDir(), metadata)
+	require.NoError(t, err)
+	snapshot := &raftpb.Snapshot{
+		Metadata: &raftpb.SnapshotMetadata{
+			ConfState: &raftpb.ConfState{Voters: []uint64{1, 2, 3}},
+			Index:     new(uint64(27)),
+			Term:      new(uint64(2)),
+		},
+	}
+	require.NoError(t, w.SaveSnapshot(&walpb.Snapshot{
+		Index:     snapshot.Metadata.Index,
+		Term:      snapshot.Metadata.Term,
+		ConfState: snapshot.Metadata.ConfState,
+	}))
+	err = w.Save(&raftpb.HardState{Term: new(uint64(2)), Commit: new(uint64(28))}, ents)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	bwal, err := bootstrapWALFromSnapshot(cfg, snapshot, cindex.NewFakeConsistentIndex(49))
+	require.Error(t, err)
+	require.Nil(t, bwal)
+	require.Contains(t, err.Error(), "exceeds the last WAL entry index")
+
+	// the WAL must not have been touched: no entries past the gap are
+	// appended, and the hard state is left as it was
+	w2, err := wal.Open(cfg.Logger, cfg.WALDir(), &walpb.Snapshot{
+		Index: snapshot.Metadata.Index,
+		Term:  snapshot.Metadata.Term,
+	})
+	require.NoError(t, err)
+	defer w2.Close()
+	_, _, ents2, err := w2.ReadAll()
+	require.NoError(t, err)
+	require.Len(t, ents2, 4)
+	require.Equal(t, uint64(31), ents2[len(ents2)-1].GetIndex())
 }

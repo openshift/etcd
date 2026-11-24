@@ -125,8 +125,7 @@ func migrateCommandFunc(c *migrateConfig) error {
 	if err := validateDataDir(c.dataDir); err != nil {
 		return err
 	}
-	dbPath := datadir.ToBackendFileName(c.dataDir)
-	be := backend.NewDefaultBackend(GetLogger(), dbPath)
+	be := backend.NewDefaultBackend(GetLogger(), datadir.ToBackendFileName(c.dataDir), backend.WithTimeout(FlockTimeout))
 	defer be.Close()
 
 	tx := be.BatchTx()

@@ -27,7 +27,7 @@ import (
 
 func TestDefragOnline(t *testing.T) {
 	testRunner.BeforeTest(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	options := config.DefragOption{Timeout: 10 * time.Second}
 	clus := testRunner.NewCluster(ctx, t)
@@ -36,7 +36,8 @@ func TestDefragOnline(t *testing.T) {
 		defer clus.Close()
 		kvs := []testutils.KV{{Key: "key", Val: "val1"}, {Key: "key", Val: "val2"}, {Key: "key", Val: "val3"}}
 		for i := range kvs {
-			require.NoErrorf(t, cc.Put(ctx, kvs[i].Key, kvs[i].Val, config.PutOptions{}), "compactTest #%d: put kv error", i)
+			_, err := cc.Put(ctx, kvs[i].Key, kvs[i].Val, config.PutOptions{})
+			require.NoErrorf(t, err, "compactTest #%d: put kv error", i)
 		}
 		_, err := cc.Compact(ctx, 4, config.CompactOption{Physical: true, Timeout: 10 * time.Second})
 		require.NoErrorf(t, err, "defrag_test: compact with revision error (%v)", err)

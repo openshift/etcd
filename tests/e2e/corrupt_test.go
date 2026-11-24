@@ -99,7 +99,7 @@ func corruptTest(cx ctlCtx) {
 func TestInPlaceRecovery(t *testing.T) {
 	basePort := 20000
 	e2e.BeforeTest(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	// Initialize the cluster.
@@ -124,7 +124,7 @@ func TestInPlaceRecovery(t *testing.T) {
 	oldCc, err := e2e.NewEtcdctl(epcOld.Cfg.Client, epcOld.EndpointsGRPC())
 	require.NoError(t, err)
 	for i := 0; i < 10; i++ {
-		err = oldCc.Put(ctx, testutil.PickKey(int64(i)), fmt.Sprint(i), config.PutOptions{})
+		_, err = oldCc.Put(ctx, testutil.PickKey(int64(i)), fmt.Sprint(i), config.PutOptions{})
 		require.NoErrorf(t, err, "error on put")
 	}
 
@@ -188,24 +188,13 @@ func TestInPlaceRecovery(t *testing.T) {
 }
 
 func TestPeriodicCheckDetectsCorruption(t *testing.T) {
-	testPeriodicCheckDetectsCorruption(t, false)
-}
-
-func TestPeriodicCheckDetectsCorruptionWithExperimentalFlag(t *testing.T) {
-	testPeriodicCheckDetectsCorruption(t, true)
-}
-
-func testPeriodicCheckDetectsCorruption(t *testing.T, useExperimentalFlag bool) {
 	checkTime := time.Second
 	e2e.BeforeTest(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	var corruptCheckTime e2e.EPClusterOption
-	if useExperimentalFlag {
-		corruptCheckTime = e2e.WithExperimentalCorruptCheckTime(time.Second)
-	} else {
-		corruptCheckTime = e2e.WithCorruptCheckTime(time.Second)
-	}
+
+	corruptCheckTime := e2e.WithCorruptCheckTime(time.Second)
+
 	epc, err := e2e.NewEtcdProcessCluster(ctx, t,
 		e2e.WithKeepDataDir(true),
 		corruptCheckTime,
@@ -221,7 +210,7 @@ func testPeriodicCheckDetectsCorruption(t *testing.T, useExperimentalFlag bool) 
 
 	cc := epc.Etcdctl()
 	for i := 0; i < 10; i++ {
-		err = cc.Put(ctx, testutil.PickKey(int64(i)), fmt.Sprint(i), config.PutOptions{})
+		_, err = cc.Put(ctx, testutil.PickKey(int64(i)), fmt.Sprint(i), config.PutOptions{})
 		require.NoErrorf(t, err, "error on put")
 	}
 
@@ -233,7 +222,7 @@ func testPeriodicCheckDetectsCorruption(t *testing.T, useExperimentalFlag bool) 
 	err = testutil.CorruptBBolt(datadir.ToBackendFileName(epc.Procs[0].Config().DataDirPath))
 	require.NoError(t, err)
 
-	err = epc.Procs[0].Restart(context.TODO())
+	err = epc.Procs[0].Restart(t.Context())
 	require.NoError(t, err)
 	time.Sleep(checkTime * 11 / 10)
 	alarmResponse, err := cc.AlarmList(ctx)
@@ -252,7 +241,7 @@ func TestCompactHashCheckDetectCorruptionWithFeatureGate(t *testing.T) {
 func testCompactHashCheckDetectCorruption(t *testing.T, useFeatureGate bool) {
 	checkTime := time.Second
 	e2e.BeforeTest(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	opts := []e2e.EPClusterOption{e2e.WithKeepDataDir(true), e2e.WithCompactHashCheckTime(checkTime)}
 	if useFeatureGate {
@@ -272,7 +261,7 @@ func testCompactHashCheckDetectCorruption(t *testing.T, useFeatureGate bool) {
 
 	cc := epc.Etcdctl()
 	for i := 0; i < 10; i++ {
-		err = cc.Put(ctx, testutil.PickKey(int64(i)), fmt.Sprint(i), config.PutOptions{})
+		_, err = cc.Put(ctx, testutil.PickKey(int64(i)), fmt.Sprint(i), config.PutOptions{})
 		require.NoErrorf(t, err, "error on put")
 	}
 	memberID, found, err := getMemberIDByName(ctx, cc, epc.Procs[0].Config().Name)
@@ -294,21 +283,17 @@ func testCompactHashCheckDetectCorruption(t *testing.T, useFeatureGate bool) {
 }
 
 func TestCompactHashCheckDetectCorruptionInterrupt(t *testing.T) {
-	testCompactHashCheckDetectCorruptionInterrupt(t, false, false)
+	testCompactHashCheckDetectCorruptionInterrupt(t, false)
 }
 
 func TestCompactHashCheckDetectCorruptionInterruptWithFeatureGate(t *testing.T) {
-	testCompactHashCheckDetectCorruptionInterrupt(t, true, false)
+	testCompactHashCheckDetectCorruptionInterrupt(t, true)
 }
 
-func TestCompactHashCheckDetectCorruptionInterruptWithExperimentalFlag(t *testing.T) {
-	testCompactHashCheckDetectCorruptionInterrupt(t, true, true)
-}
-
-func testCompactHashCheckDetectCorruptionInterrupt(t *testing.T, useFeatureGate bool, useExperimentalFlag bool) {
+func testCompactHashCheckDetectCorruptionInterrupt(t *testing.T, useFeatureGate bool) {
 	checkTime := time.Second
 	e2e.BeforeTest(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 
 	slowCompactionNodeIndex := 1
@@ -329,12 +314,8 @@ func testCompactHashCheckDetectCorruptionInterrupt(t *testing.T, useFeatureGate 
 	} else {
 		opts = append(opts, e2e.WithCompactHashCheckEnabled(true))
 	}
-	var compactionBatchLimit e2e.EPClusterOption
-	if useExperimentalFlag {
-		compactionBatchLimit = e2e.WithExperimentalCompactionBatchLimit(1)
-	} else {
-		compactionBatchLimit = e2e.WithCompactionBatchLimit(1)
-	}
+
+	compactionBatchLimit := e2e.WithCompactionBatchLimit(1)
 
 	cfg := e2e.NewConfig(opts...)
 	epc, err := e2e.InitEtcdProcessCluster(t, cfg)
@@ -360,7 +341,7 @@ func testCompactHashCheckDetectCorruptionInterrupt(t *testing.T, useFeatureGate 
 	t.Log("putting 10 values to the identical key...")
 	cc := epc.Etcdctl()
 	for i := 0; i < 10; i++ {
-		err = cc.Put(ctx, "key", fmt.Sprint(i), config.PutOptions{})
+		_, err = cc.Put(ctx, "key", fmt.Sprint(i), config.PutOptions{})
 		require.NoErrorf(t, err, "error on put")
 	}
 
@@ -407,7 +388,7 @@ func TestCtlV3LinearizableRead(t *testing.T) {
 func testCtlV3ReadAfterWrite(t *testing.T, ops ...clientv3.OpOption) {
 	e2e.BeforeTest(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	epc, err := e2e.NewEtcdProcessCluster(ctx, t,
 		e2e.WithClusterSize(1),

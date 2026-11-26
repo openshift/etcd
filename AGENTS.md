@@ -28,20 +28,31 @@ See [docs/openshift-downstream.md](./docs/openshift-downstream.md) for details.
 
 ## Critical rules
 
-1. **Follow the commit-prefix convention.** Downstream commits are labeled so
-   rebases can carry or drop them: `UPSTREAM: <carry>` (temporary carry, hope to
-   upstream), `UPSTREAM: <drop>` (carry that will never go upstream),
-   `DOWNSTREAM: <carry>` (OpenShift-specific). Preserve these prefixes.
-2. **Rebase with the script, not by hand.** Use `openshift-hack/rebase.sh`; see
-   [REBASE.openshift.md](./REBASE.openshift.md).
+1. **Follow the commit-prefix convention.** Every downstream non-merge commit,
+   except automated ART image updates, starts with one of the openshift/kubernetes prefixes: `UPSTREAM: <carry>:`
+   (a persistent change with no etcd-io/etcd pull request to cherry-pick:
+   OpenShift-only, or a dependency ahead of upstream),
+   `UPSTREAM: <PR#>:` (a cherry-pick of that etcd-io/etcd pull request),
+   `UPSTREAM: <drop>:` (only for the current branch, such as conflict
+   resolution or image updates), or
+   `UPSTREAM: revert: <original prefix>: <original subject>` (a revert of a
+   carry). A dependency bump ahead of upstream is a `<carry>`, not a `<drop>`.
+   Older commits may use `DOWNSTREAM:`; do not rewrite them. See
+   [REBASE.openshift.md](./REBASE.openshift.md#commit-message-prefixes).
+2. **Rebase the documented way.** Merge the new tag for patch releases and use
+   the cherry-pick process for minor releases; see
+   [REBASE.openshift.md](./REBASE.openshift.md). `openshift-hack/rebase.sh` has
+   known bugs; follow the documented steps until it is fixed. Never force push
+   branches in openshift/etcd (force-pushing your own PR branch is fine).
 3. **Never edit generated code.** Edit the `.proto` and run `make genproto`;
    never hand-edit `*.pb.go`. Never edit `vendor/`.
 4. **Do not break the API.** Never remove or rename API fields; deprecate instead.
 5. **All persistent state goes through Raft.** Use `s.r.Propose()`; never mutate
    state directly or assume leadership.
 6. **bbolt is replaced downstream.** `go.mod` has a `replace` directive pointing
-   `go.etcd.io/bbolt` at `openshift/bbolt`. Do not remove it; see the bbolt
-   section of [REBASE.openshift.md](./REBASE.openshift.md).
+   `go.etcd.io/bbolt` at `openshift/bbolt`. Do not remove it while the bbolt
+   version etcd requires lacks the fix; see the bbolt section of
+   [REBASE.openshift.md](./REBASE.openshift.md).
 7. **All changes need tests.**
 
 ## Repository structure
@@ -49,7 +60,7 @@ See [docs/openshift-downstream.md](./docs/openshift-downstream.md) for details.
 ```text
 openshift-tools/        # Downstream helper binaries baked into the etcd image
   discover-etcd-initial-cluster/   # Computes ETCD_INITIAL_CLUSTER at pod start
-openshift-hack/         # Downstream tooling, incl. rebase.sh
+openshift-hack/         # Downstream tooling, incl. rebase.sh (known bugs)
 server/etcdserver/      # Core server: server.go, raft.go, apply*.go
 server/storage/         # mvcc/, backend/ (bbolt), wal/
 client/v3/              # Go client
@@ -63,9 +74,10 @@ others) wired together with `replace` directives in `go.mod`.
 
 ## Downstream differences from upstream
 
-The distinguishing content of this fork lives in the carried patches. The full,
-current list is the git history filtered by the `DOWNSTREAM:` / `UPSTREAM:`
-prefixes. The most significant ones:
+The distinguishing content of this fork lives in the carried patches. The
+current list is the carry list in
+[REBASE.openshift.md](./REBASE.openshift.md#checking-carries-after-a-merge),
+after striking reverted carries. The most significant ones:
 
 - **`discover-etcd-initial-cluster`** - computes `ETCD_INITIAL_CLUSTER` live at
   pod start by querying the running cluster and inspecting the local data dir.
@@ -83,9 +95,10 @@ deep dive.
 ## Build and test
 
 ```bash
-./build.sh          # builds bin/{etcd,etcdctl,etcdutl,discover-etcd-initial-cluster}
+GO_BUILD_FLAGS='-v' ./build.sh   # builds bin/{etcd,etcdctl,etcdutl,discover-etcd-initial-cluster}
 make build          # standard upstream build
-make test           # unit tests
+make test           # unit, integration, release and e2e (slow)
+make test-unit      # unit tests only
 make test-integration
 make test-e2e
 make verify         # linters and generated-file checks
@@ -98,9 +111,12 @@ runs.
 CI (comment on the PR):
 
 ```text
-/payload 4.x nightly informing
-/payload 4.x nightly blocking
+/payload 5.x nightly informing
+/payload 5.x nightly blocking
 ```
+
+Replace 5.x with the release in the `build_root_image` tag of
+`.ci-operator.yaml`.
 
 See [REBASE.openshift.md](./REBASE.openshift.md) for ClusterBot and performance
 testing.
@@ -117,7 +133,8 @@ testing.
 ### Never
 
 - Edit generated code (`*.pb.go`) or `vendor/`.
-- Remove the bbolt `replace` directive or the downstream commit prefixes.
+- Remove the bbolt `replace` directive while the fix is missing upstream, or
+  the downstream commit prefixes.
 - Break or remove API fields.
 - Block the Raft apply loop.
 
@@ -131,7 +148,7 @@ testing.
 ## Key files
 
 - `openshift-tools/pkg/discover-etcd-initial-cluster/initial-cluster.go` - bootstrap logic
-- `openshift-hack/rebase.sh` - rebase automation
+- `openshift-hack/rebase.sh` - patch rebase helper (known bugs; see REBASE.openshift.md)
 - `REBASE.openshift.md` - rebase and bbolt-fork procedures
 - `build.sh` - builds all binaries, including the downstream helpers
 - `Dockerfile.rhel` - assembles the etcd image

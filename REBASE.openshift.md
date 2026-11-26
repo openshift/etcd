@@ -386,9 +386,13 @@ does not have.
        ```
        Quote `'Dockerfile.*'`. Commit them as one commit, and keep the
        replayed commits' subjects in its body.
-     - If a file that upstream also has, such as `OWNERS`, conflicts, keep the
-       version from the commit you are replaying:
-       `git checkout <sha> -- OWNERS`.
+     - Prow reads `DOWNSTREAM_OWNERS` and `DOWNSTREAM_OWNERS_ALIASES` for
+       openshift/etcd
+       ([openshift/release#89180](https://github.com/openshift/release/pull/89180)),
+       so those are the OpenShift owners files. The root `OWNERS` and the
+       other `OWNERS` files are upstream's: older commits that changed the
+       root `OWNERS` are not replayed for it, and the branch keeps the new
+       tag's version.
      - You can keep the picks as separate commits while the PR is in review,
        and squash them before it merges. Squash only the picks, never the
        `-s ours` merge. Force-pushing your own PR branch for this is fine.
@@ -396,8 +400,9 @@ does not have.
        succeed:
        ```
        git diff --exit-code $target HEAD -- openshift-tools openshift-hack build.sh \
-         OWNERS .ci-operator.yaml 'Dockerfile.*' REBASE.openshift.md AGENTS.md \
-         CLAUDE.md ARCHITECTURE.md docs/openshift-downstream.md
+         DOWNSTREAM_OWNERS DOWNSTREAM_OWNERS_ALIASES .ci-operator.yaml 'Dockerfile.*' \
+         REBASE.openshift.md AGENTS.md CLAUDE.md ARCHITECTURE.md \
+         docs/openshift-downstream.md
        ```
        Make any change the new release needs to these files in a separate
        commit after this check.
@@ -481,8 +486,8 @@ does not have.
    commit (or your last OpenShift files pick, if you have not squashed yet)
    instead of `HEAD`, because the commits after it change some of those files
    on purpose.
-   To keep this rare, ask the approvers in `OWNERS` for a short merge freeze
-   on `main` in the last days before the rebase PR merges.
+   To keep this rare, ask the approvers in `DOWNSTREAM_OWNERS` for a short
+   merge freeze on `main` in the last days before the rebase PR merges.
 9. After the rebase PR merges, check that it kept the history, then find the
    open PRs that need a rebase. A PR with commits made on the old branch
    brings in commits that the `--ancestry-path` lists never show, even if
@@ -493,8 +498,9 @@ does not have.
      git merge-base --is-ancestor <target from the PR description> openshift/main ||
      echo "history lost"
    ```
-   If it prints `history lost`, stop and tell the approvers in `OWNERS`: the
-   rebase PR did not keep the history. Otherwise, list the PRs:
+   If it prints `history lost`, stop and tell the approvers in
+   `DOWNSTREAM_OWNERS`: the rebase PR did not keep the history. Otherwise,
+   list the PRs:
    ```
    for pr in $(gh pr list -R openshift/etcd --base main --state open --limit 500 \
                  --json number --jq '.[].number'); do
@@ -508,8 +514,8 @@ does not have.
    Each listed PR must be rebased onto the new `main` (not have `main` merged
    into it) before it merges. `git rebase openshift/main` on the PR branch
    replays only the PR's own commits; expect conflicts, since the tree is now
-   on the new release. Tell the approvers in `OWNERS` when the rebase PR
-   merges, so authors of open PRs know to rebase.
+   on the new release. Tell the approvers in `DOWNSTREAM_OWNERS` when the
+   rebase PR merges, so authors of open PRs know to rebase.
 
 ## Building and testing
 
